@@ -41,10 +41,10 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     env:
-      KKFILEVIEW_VERSION: ${{ inputs.kkfileview_version }}
-      BUILD_MODE: ${{ inputs.build_mode }}
-      BASE_IMAGE: ${{ inputs.base_image }}
-      IMAGE_NAME: ${{ inputs.image_name }}
+      KKFILEVIEW_VERSION: ${{ inputs.kkfileview_version || 'v4.4.0' }}
+      BUILD_MODE: ${{ inputs.build_mode || 'source' }}
+      BASE_IMAGE: ${{ inputs.base_image || 'openjdk:17-jdk-slim' }}
+      IMAGE_NAME: ${{ inputs.image_name || 'kkfileview' }}
     steps:
       - name: Checkout workflow repository
         uses: actions/checkout@v4
@@ -64,7 +64,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: maven
 
       - name: Enable QEMU for loong64
         uses: docker/setup-qemu-action@v3
