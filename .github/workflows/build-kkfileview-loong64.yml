@@ -1,0 +1,109 @@
+name: Build kkFileView loong64 image
+
+on:
+  workflow_dispatch:
+    inputs:
+      kkfileview_version:
+        description: kkFileView release version
+        required: true
+        default: v4.4.0
+        type: string
+      build_mode:
+        description: Use release jar or build from source
+        required: true
+        default: release
+        type: choice
+        options:
+          - release
+          - source
+      base_image:
+        description: Base image for the loong64 runtime image
+        required: true
+        default: openjdk:17-jdk-slim
+        type: string
+      image_name:
+        description: Output Docker image name
+        required: true
+        default: kkfileview
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      KKFILEVIEW_VERSION: ${{ inputs.kkfileview_version }}
+      BUILD_MODE: ${{ inputs.build_mode }}
+      BASE_IMAGE: ${{ inputs.base_image }}
+      IMAGE_NAME: ${{ inputs.image_name }}
+    steps:
+      - name: Checkout workflow repository
+        uses: actions/checkout@v4
+
+      - name: Set artifact names
+        id: meta
+        run: |
+          VERSION_TAG="${KKFILEVIEW_VERSION#v}"
+          echo "VERSION_TAG=${VERSION_TAG}" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=${IMAGE_NAME}:loong64-${VERSION_TAG}" >> "$GITHUB_ENV"
+          echo "TAR_NAME=${IMAGE_NAME}-loong64-${VERSION_TAG}.tar" >> "$GITHUB_ENV"
+          echo "version_tag=${VERSION_TAG}" >> "$GITHUB_OUTPUT"
+          echo "tar_name=${IMAGE_NAME}-loong64-${VERSION_TAG}.tar" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java
+        if: env.BUILD_MODE == 'source'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Enable QEMU for loong64
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: loong64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Download released jar
+        if: env.BUILD_MODE == 'release'
+        run: |
+          VERSION_TAG="${KKFILEVIEW_VERSION#v}"
+          curl -fL "https://github.com/kekingcn/kkFileView/releases/download/${KKFILEVIEW_VERSION}/kkFileView-${VERSION_TAG}.jar" -o kkFileView.jar
+
+      - name: Build jar from source
+        if: env.BUILD_MODE == 'source'
+        run: |
+          git clone --depth 1 --branch "${KKFILEVIEW_VERSION}" https://github.com/kekingcn/kkFileView.git upstream-kkfileview
+          cd upstream-kkfileview
+          chmod +x mvnw
+          ./mvnw clean package -DskipTests
+          cp server/target/kkFileView-*.jar "$GITHUB_WORKSPACE/kkFileView.jar"
+
+      - name: Verify jar exists
+        run: |
+          test -f kkFileView.jar
+          ls -lh kkFileView.jar
+
+      - name: Build loong64 image and load locally
+        run: |
+          docker buildx build \
+            --platform linux/loong64 \
+            --build-arg BASE_IMAGE="${BASE_IMAGE}" \
+            -t "${IMAGE_TAG}" \
+            -f Dockerfile.loong64 \
+            --load .
+
+      - name: Export image tar
+        run: docker save -o "${TAR_NAME}" "${IMAGE_TAG}"
+
+      - name: Upload offline image tar
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.IMAGE_NAME }}-loong64-${{ steps.meta.outputs.version_tag }}
+          path: ${{ steps.meta.outputs.tar_name }}
+          if-no-files-found: error
+          retention-days: 7

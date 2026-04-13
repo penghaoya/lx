@@ -1,0 +1,13 @@
+# syntax=docker/dockerfile:1.7
+ARG BASE_IMAGE=openjdk:17-jdk-slim
+FROM --platform=linux/loong64 ${BASE_IMAGE}
+
+WORKDIR /app
+
+ENV LANG=C.UTF-8
+
+COPY kkFileView.jar ./kkFileView.jar
+
+EXPOSE 8012
+
+ENTRYPOINT ["java", "-jar", "/app/kkFileView.jar"]
