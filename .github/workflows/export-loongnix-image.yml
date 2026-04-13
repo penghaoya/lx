@@ -16,6 +16,7 @@ on:
 
 env:
   DEFAULT_IMAGES: "cr.loongnix.cn/library/openjdk:8-buster,cr.loongnix.cn/portainer/portainer-ce:latest"
+  TARGET_PLATFORM: "linux/loong64"
 
 permissions:
   contents: read
@@ -31,36 +32,84 @@ jobs:
         env:
           IMAGES: ${{ inputs.images || env.DEFAULT_IMAGES }}
         run: |
-          MATRIX=$(echo "${IMAGES}" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | jq -R -s -c '[split("\n")[] | select(length>0) | {ref: .}]')
+          set -euo pipefail
+
+          MATRIX=$(
+            echo "${IMAGES}" \
+              | tr ',' '\n' \
+              | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+              | grep -v '^$' \
+              | jq -R -s -c '[split("\n")[] | select(length>0) | {ref: .}]'
+          )
+
           echo "matrix={\"include\":${MATRIX}}" >> "$GITHUB_OUTPUT"
 
   export:
     needs: prepare
     runs-on: ubuntu-24.04
     strategy:
+      fail-fast: false
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+
     steps:
       - name: Enable QEMU for loong64
         uses: docker/setup-qemu-action@v3
         with:
           platforms: loong64
 
-      - name: Pull and export image
-        id: export
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Check manifest supports loong64
+        env:
+          REF: ${{ matrix.ref }}
+          TARGET_PLATFORM: ${{ env.TARGET_PLATFORM }}
         run: |
-          REF="${{ matrix.ref }}"
-          docker pull "${REF}"
-          # 解析 image 和 tag
+          set -euo pipefail
+
+          RAW_MANIFEST="$(docker buildx imagetools inspect "${REF}" --raw)"
+          echo "${RAW_MANIFEST}" > manifest.json
+
+          if ! jq -e '
+            if .manifests then
+              any(.manifests[]; .platform.os == "linux" and .platform.architecture == "loong64")
+            else
+              (.os == "linux" and .architecture == "loong64")
+            end
+          ' manifest.json > /dev/null; then
+            echo "Image ${REF} does not provide ${TARGET_PLATFORM}"
+            exit 1
+          fi
+
+      - name: Pull and export loong64 image
+        id: export
+        env:
+          REF: ${{ matrix.ref }}
+          TARGET_PLATFORM: ${{ env.TARGET_PLATFORM }}
+        run: |
+          set -euo pipefail
+
+          docker pull --platform="${TARGET_PLATFORM}" "${REF}"
+
+          ACTUAL_PLATFORM="$(docker image inspect "${REF}" --format '{{.Os}}/{{.Architecture}}')"
+          echo "Pulled platform: ${ACTUAL_PLATFORM}"
+
+          test "${ACTUAL_PLATFORM}" = "${TARGET_PLATFORM}"
+
           IMAGE="${REF%%:*}"
           TAG="${REF#*:}"
           [ "${TAG}" = "${IMAGE}" ] && TAG="latest"
+
           NAME="${IMAGE##*/}"
           SAFE_TAG="${TAG//\//-}"
           TAR_NAME="${NAME}-loong64-${SAFE_TAG}.tar"
+          ARTIFACT_NAME="${NAME}-loong64-${SAFE_TAG}"
+
           docker save -o "${TAR_NAME}" "${REF}"
           ls -lh "${TAR_NAME}"
+
           echo "tar_name=${TAR_NAME}" >> "$GITHUB_OUTPUT"
-          echo "artifact_name=${NAME}-loong64-${SAFE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Upload image tar
         uses: actions/upload-artifact@v4
