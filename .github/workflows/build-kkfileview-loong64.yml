@@ -63,7 +63,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '8'
 
       - name: Enable QEMU for loong64
         uses: docker/setup-qemu-action@v3
@@ -92,8 +92,7 @@ jobs:
         run: |
           git clone --depth 1 --branch "${KKFILEVIEW_VERSION}" https://github.com/kekingcn/kkFileView.git upstream-kkfileview
           cd upstream-kkfileview
-          chmod +x mvnw
-          ./mvnw clean package -DskipTests
+          mvn -B -ntp -pl server -am clean package -DskipTests
           cp server/target/kkFileView-*.jar "$GITHUB_WORKSPACE/kkFileView.jar"
 
       - name: Verify jar exists
