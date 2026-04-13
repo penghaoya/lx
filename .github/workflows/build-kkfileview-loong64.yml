@@ -1,6 +1,13 @@
 name: Build kkFileView loong64 image
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-kkfileview-loong64.yml
+      - Dockerfile.loong64
+      - README.md
   workflow_dispatch:
     inputs:
       kkfileview_version:
@@ -11,7 +18,7 @@ on:
       build_mode:
         description: Use release jar or build from source
         required: true
-        default: release
+        default: source
         type: choice
         options:
           - release
@@ -53,7 +60,6 @@ jobs:
           echo "tar_name=${IMAGE_NAME}-loong64-${VERSION_TAG}.tar" >> "$GITHUB_OUTPUT"
 
       - name: Set up Java
-        if: env.BUILD_MODE == 'source'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -68,14 +74,22 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Download released jar
+      - name: Try downloading released jar
         if: env.BUILD_MODE == 'release'
+        id: release_jar
         run: |
           VERSION_TAG="${KKFILEVIEW_VERSION#v}"
-          curl -fL "https://github.com/kekingcn/kkFileView/releases/download/${KKFILEVIEW_VERSION}/kkFileView-${VERSION_TAG}.jar" -o kkFileView.jar
+          JAR_URL="https://github.com/kekingcn/kkFileView/releases/download/${KKFILEVIEW_VERSION}/kkFileView-${VERSION_TAG}.jar"
+          if curl -fL "$JAR_URL" -o kkFileView.jar; then
+            echo "source_mode=release" >> "$GITHUB_OUTPUT"
+          else
+            echo "Public release jar not found for ${KKFILEVIEW_VERSION}, fallback to source build"
+            rm -f kkFileView.jar
+            echo "source_mode=fallback" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build jar from source
-        if: env.BUILD_MODE == 'source'
+        if: env.BUILD_MODE == 'source' || steps.release_jar.outputs.source_mode == 'fallback'
         run: |
           git clone --depth 1 --branch "${KKFILEVIEW_VERSION}" https://github.com/kekingcn/kkFileView.git upstream-kkfileview
           cd upstream-kkfileview

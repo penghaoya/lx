@@ -13,11 +13,11 @@
 
 1. 将当前目录推送到 GitHub 仓库。
 2. 打开仓库的 Actions 页面。
-3. 运行 `Build kkFileView loong64 image` 工作流。
+3. 可以 push 到 `main` 自动触发，也可以手动运行 `Build kkFileView loong64 image` 工作流。
 4. 根据需要填写输入参数：
 
 - `kkfileview_version`：例如 `v4.4.0`
-- `build_mode`：`release` 或 `source`
+- `build_mode`：`release` 或 `source`，默认建议 `source`
 - `base_image`：默认 `openjdk:17-jdk-slim`
 - `image_name`：默认 `kkfileview`
 
@@ -38,6 +38,7 @@ docker run -d --name kkfileview -p 8012:8012 -v /usr/share/fonts:/usr/share/font
 
 ## 注意事项
 
+- 上游 `v4.4.0` Release 没有公开 jar 资产，`release` 模式下载失败时会自动回退到源码编译。
 - 如果默认基础镜像不支持 `linux/loong64`，请在工作流输入中替换为支持 LoongArch64 的 JDK 镜像。
 - kkFileView 常依赖宿主机字体，离线服务器建议挂载 `/usr/share/fonts`。
-- 默认容器端口为 `8012`，如有冲突可改为 `-p 18012:8012`。# lx
+- 默认容器端口为 `8012`，如有冲突可改为 `-p 18012:8012`。
