@@ -26,7 +26,7 @@ on:
       base_image:
         description: Base image for the loong64 runtime image
         required: true
-        default: openjdk:17-jdk-slim
+        default: debian:sid-slim
         type: string
       image_name:
         description: Output Docker image name
@@ -43,7 +43,7 @@ jobs:
     env:
       KKFILEVIEW_VERSION: ${{ inputs.kkfileview_version || 'v4.4.0' }}
       BUILD_MODE: ${{ inputs.build_mode || 'source' }}
-      BASE_IMAGE: ${{ inputs.base_image || 'openjdk:17-jdk-slim' }}
+      BASE_IMAGE: ${{ inputs.base_image || 'debian:sid-slim' }}
       IMAGE_NAME: ${{ inputs.image_name || 'kkfileview' }}
     steps:
       - name: Checkout workflow repository
