@@ -23,8 +23,10 @@ jobs:
     steps:
       - name: Parse image list into matrix
         id: parse
+        env:
+          IMAGES: ${{ inputs.images }}
         run: |
-          MATRIX=$(echo "${{ inputs.images }}" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | jq -R -s -c '[split("\n")[] | select(length>0) | {ref: .}]')
+          MATRIX=$(echo "${IMAGES}" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | jq -R -s -c '[split("\n")[] | select(length>0) | {ref: .}]')
           echo "matrix={\"include\":${MATRIX}}" >> "$GITHUB_OUTPUT"
 
   export:
