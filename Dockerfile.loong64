@@ -1,12 +1,7 @@
-ARG BASE_IMAGE=debian:sid-slim
-FROM --platform=linux/loong64 ${BASE_IMAGE}
+ARG BASE_IMAGE=cr.loongnix.cn/library/openjdk:8
+FROM ${BASE_IMAGE}
 
 ENV LANG=C.UTF-8
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends default-jre-headless && \
-    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
