@@ -1,0 +1,56 @@
+name: Export loongnix image
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: >
+          Full image reference, e.g.
+          cr.loongnix.cn/library/openjdk,
+          cr.loongnix.cn/portainer/portainer-ce
+        required: true
+        default: cr.loongnix.cn/library/openjdk
+        type: string
+      tag:
+        description: >
+          Image tag, e.g. 8-buster, 17, latest
+        required: true
+        default: 8-buster
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Enable QEMU for loong64
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: loong64
+
+      - name: Pull image
+        run: docker pull "${{ inputs.image }}:${{ inputs.tag }}"
+
+      - name: Export image tar
+        id: export
+        run: |
+          IMAGE="${{ inputs.image }}"
+          TAG="${{ inputs.tag }}"
+          # 取镜像名最后一段作为文件名前缀
+          NAME="${IMAGE##*/}"
+          SAFE_TAG="${TAG//\//-}"
+          TAR_NAME="${NAME}-loong64-${SAFE_TAG}.tar"
+          docker save -o "${TAR_NAME}" "${IMAGE}:${TAG}"
+          ls -lh "${TAR_NAME}"
+          echo "tar_name=${TAR_NAME}" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=${NAME}-loong64-${SAFE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload image tar
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.export.outputs.artifact_name }}
+          path: ${{ steps.export.outputs.tar_name }}
+          if-no-files-found: error
+          retention-days: 7
