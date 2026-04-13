@@ -26,7 +26,7 @@ on:
       base_image:
         description: Base image for the loong64 runtime image
         required: true
-        default: cr.loongnix.cn/library/openjdk:8
+        default: cr.loongnix.cn/library/openjdk:8-buster
         type: string
       image_name:
         description: Output Docker image name
@@ -43,7 +43,7 @@ jobs:
     env:
       KKFILEVIEW_VERSION: ${{ inputs.kkfileview_version || 'v4.4.0' }}
       BUILD_MODE: ${{ inputs.build_mode || 'source' }}
-      BASE_IMAGE: ${{ inputs.base_image || 'cr.loongnix.cn/library/openjdk:8' }}
+      BASE_IMAGE: ${{ inputs.base_image || 'cr.loongnix.cn/library/openjdk:8-buster' }}
       IMAGE_NAME: ${{ inputs.image_name || 'kkfileview' }}
     steps:
       - name: Checkout workflow repository
@@ -69,9 +69,6 @@ jobs:
         uses: docker/setup-qemu-action@v3
         with:
           platforms: loong64
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
 
       - name: Try downloading released jar
         if: env.BUILD_MODE == 'release'
@@ -100,14 +97,12 @@ jobs:
           test -f kkFileView.jar
           ls -lh kkFileView.jar
 
-      - name: Build loong64 image and load locally
+      - name: Build loong64 image
         run: |
-          docker buildx build \
-            --platform linux/loong64 \
+          docker build \
             --build-arg BASE_IMAGE="${BASE_IMAGE}" \
             -t "${IMAGE_TAG}" \
-            -f Dockerfile.loong64 \
-            --load .
+            -f Dockerfile.loong64 .
 
       - name: Export image tar
         run: docker save -o "${TAR_NAME}" "${IMAGE_TAG}"
