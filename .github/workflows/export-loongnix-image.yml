@@ -1,16 +1,21 @@
 name: Export loongnix images
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/export-loongnix-image.yml
   workflow_dispatch:
     inputs:
       images:
-        description: >
-          Images to export, one per line: image:tag
+        description: "Comma-separated image:tag list"
         required: true
-        default: |-
-          cr.loongnix.cn/library/openjdk:8-buster
-          cr.loongnix.cn/portainer/portainer-ce:latest
+        default: "cr.loongnix.cn/library/openjdk:8-buster,cr.loongnix.cn/portainer/portainer-ce:latest"
         type: string
+
+env:
+  DEFAULT_IMAGES: "cr.loongnix.cn/library/openjdk:8-buster,cr.loongnix.cn/portainer/portainer-ce:latest"
 
 permissions:
   contents: read
@@ -24,7 +29,7 @@ jobs:
       - name: Parse image list into matrix
         id: parse
         env:
-          IMAGES: ${{ inputs.images }}
+          IMAGES: ${{ inputs.images || env.DEFAULT_IMAGES }}
         run: |
           MATRIX=$(echo "${IMAGES}" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | jq -R -s -c '[split("\n")[] | select(length>0) | {ref: .}]')
           echo "matrix={\"include\":${MATRIX}}" >> "$GITHUB_OUTPUT"
