@@ -1,48 +1,56 @@
-name: Export loongnix image
+name: Export loongnix images
 
 on:
   workflow_dispatch:
     inputs:
-      image:
+      images:
         description: >
-          Full image reference, e.g.
-          cr.loongnix.cn/library/openjdk,
-          cr.loongnix.cn/portainer/portainer-ce
+          Images to export, one per line: image:tag
         required: true
-        default: cr.loongnix.cn/library/openjdk
-        type: string
-      tag:
-        description: >
-          Image tag, e.g. 8-buster, 17, latest
-        required: true
-        default: 8-buster
+        default: |-
+          cr.loongnix.cn/library/openjdk:8-buster
+          cr.loongnix.cn/portainer/portainer-ce:latest
         type: string
 
 permissions:
   contents: read
 
 jobs:
-  export:
+  prepare:
     runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.parse.outputs.matrix }}
+    steps:
+      - name: Parse image list into matrix
+        id: parse
+        run: |
+          MATRIX=$(echo "${{ inputs.images }}" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | jq -R -s -c '[split("\n")[] | select(length>0) | {ref: .}]')
+          echo "matrix={\"include\":${MATRIX}}" >> "$GITHUB_OUTPUT"
+
+  export:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
       - name: Enable QEMU for loong64
         uses: docker/setup-qemu-action@v3
         with:
           platforms: loong64
 
-      - name: Pull image
-        run: docker pull "${{ inputs.image }}:${{ inputs.tag }}"
-
-      - name: Export image tar
+      - name: Pull and export image
         id: export
         run: |
-          IMAGE="${{ inputs.image }}"
-          TAG="${{ inputs.tag }}"
-          # 取镜像名最后一段作为文件名前缀
+          REF="${{ matrix.ref }}"
+          docker pull "${REF}"
+          # 解析 image 和 tag
+          IMAGE="${REF%%:*}"
+          TAG="${REF#*:}"
+          [ "${TAG}" = "${IMAGE}" ] && TAG="latest"
           NAME="${IMAGE##*/}"
           SAFE_TAG="${TAG//\//-}"
           TAR_NAME="${NAME}-loong64-${SAFE_TAG}.tar"
-          docker save -o "${TAR_NAME}" "${IMAGE}:${TAG}"
+          docker save -o "${TAR_NAME}" "${REF}"
           ls -lh "${TAR_NAME}"
           echo "tar_name=${TAR_NAME}" >> "$GITHUB_OUTPUT"
           echo "artifact_name=${NAME}-loong64-${SAFE_TAG}" >> "$GITHUB_OUTPUT"
