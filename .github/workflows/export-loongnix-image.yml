@@ -67,6 +67,12 @@ jobs:
         run: |
           set -euo pipefail
 
+          # cr.loongnix.cn images are all loong64, skip manifest check
+          if [[ "${REF}" == cr.loongnix.cn/* ]]; then
+            echo "Skipping manifest check for loongnix registry image: ${REF}"
+            exit 0
+          fi
+
           RAW_MANIFEST="$(docker buildx imagetools inspect "${REF}" --raw)"
           echo "${RAW_MANIFEST}" > manifest.json
 
@@ -89,12 +95,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          docker pull --platform="${TARGET_PLATFORM}" "${REF}"
-
-          ACTUAL_PLATFORM="$(docker image inspect "${REF}" --format '{{.Os}}/{{.Architecture}}')"
-          echo "Pulled platform: ${ACTUAL_PLATFORM}"
-
-          test "${ACTUAL_PLATFORM}" = "${TARGET_PLATFORM}"
+          # loongnix registry images are single-arch loong64, don't need --platform
+          if [[ "${REF}" == cr.loongnix.cn/* ]]; then
+            docker pull "${REF}"
+          else
+            docker pull --platform="${TARGET_PLATFORM}" "${REF}"
+            ACTUAL_PLATFORM="$(docker image inspect "${REF}" --format '{{.Os}}/{{.Architecture}}')"
+            echo "Pulled platform: ${ACTUAL_PLATFORM}"
+            test "${ACTUAL_PLATFORM}" = "${TARGET_PLATFORM}"
+          fi
 
           IMAGE="${REF%%:*}"
           TAG="${REF#*:}"
