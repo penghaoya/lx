@@ -78,7 +78,6 @@ jobs:
         with:
           distribution: temurin
           java-version: "8"
-          cache: maven
 
       - name: Enable QEMU for loong64
         uses: docker/setup-qemu-action@v3
