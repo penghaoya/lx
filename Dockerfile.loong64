@@ -1,12 +1,42 @@
 ARG BASE_IMAGE=cr.loongnix.cn/library/openjdk:8-buster
 FROM ${BASE_IMAGE}
 
-ENV LANG=C.UTF-8
+ARG OFFICE_PACKAGES=
+
+ENV LANG=C.UTF-8 \
+    DEBIAN_FRONTEND=noninteractive \
+    OFFICE_HOME=/opt/libreoffice \
+    JAVA_OPTS="-Dfile.encoding=UTF-8 -Doffice.home=/opt/libreoffice"
 
 WORKDIR /app
+
+RUN set -eux; \
+    apt-get update; \
+    office_packages="${OFFICE_PACKAGES}"; \
+    if [ -z "${office_packages}" ]; then \
+      if apt-cache show libreoffice-nogui >/dev/null 2>&1; then \
+        office_packages="libreoffice-nogui"; \
+      else \
+        office_packages="libreoffice"; \
+      fi; \
+    fi; \
+    apt-get install -y --no-install-recommends \
+      ${office_packages} \
+      libreoffice-java-common \
+      fontconfig \
+      fonts-dejavu \
+      fonts-liberation; \
+    office_bin="$(command -v soffice || true)"; \
+    if [ -z "${office_bin}" ]; then \
+      office_bin="$(command -v libreoffice)"; \
+    fi; \
+    office_home="$(dirname "$(dirname "$(readlink -f "${office_bin}")")")"; \
+    ln -sfn "${office_home}" /opt/libreoffice; \
+    test -d /opt/libreoffice/program; \
+    rm -rf /var/lib/apt/lists/*
 
 COPY kkFileView.jar ./kkFileView.jar
 
 EXPOSE 8012
 
-ENTRYPOINT ["java", "-jar", "/app/kkFileView.jar"]
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/kkFileView.jar"]

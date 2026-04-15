@@ -18,7 +18,8 @@
 
 - `kkfileview_version`：例如 `v4.4.0`
 - `build_mode`：`release` 或 `source`，默认建议 `source`
-- `base_image`：默认 `openjdk:17-jdk-slim`
+- `base_image`：默认 `cr.loongnix.cn/library/openjdk:8-buster`
+- `office_packages`：可选，覆盖镜像内安装的 LibreOffice apt 包；默认自动优先尝试 `libreoffice-nogui`，否则回退到 `libreoffice`
 - `image_name`：默认 `kkfileview`
 
 ## 产物说明
@@ -36,9 +37,12 @@ docker load -i kkfileview-loong64-4.4.0.tar
 docker run -d --name kkfileview -p 8012:8012 -v /usr/share/fonts:/usr/share/fonts kkfileview:loong64-4.4.0
 ```
 
+现在生成的镜像会在构建阶段安装 LibreOffice，并默认注入 `-Doffice.home=/opt/libreoffice`，避免运行时出现“找不到office组件”的启动失败。
+
 ## 注意事项
 
 - 上游 `v4.4.0` Release 没有公开 jar 资产，`release` 模式下载失败时会自动回退到源码编译。
 - 如果默认基础镜像不支持 `linux/loong64`，请在工作流输入中替换为支持 LoongArch64 的 JDK 镜像。
+- 如果所选基础镜像的软件源没有 `libreoffice-nogui`/`libreoffice` 默认包名，可以通过 `office_packages` 输入手动指定，例如 `libreoffice-core libreoffice-writer libreoffice-calc libreoffice-impress`。
 - kkFileView 常依赖宿主机字体，离线服务器建议挂载 `/usr/share/fonts`。
 - 默认容器端口为 `8012`，如有冲突可改为 `-p 18012:8012`。

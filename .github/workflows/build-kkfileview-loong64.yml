@@ -28,6 +28,11 @@ on:
         required: true
         default: cr.loongnix.cn/library/openjdk:8-buster
         type: string
+      office_packages:
+        description: Optional apt packages for LibreOffice runtime, e.g. "libreoffice" or "libreoffice-core libreoffice-writer"
+        required: false
+        default: ""
+        type: string
       image_name:
         description: Output Docker image name
         required: true
@@ -44,6 +49,7 @@ jobs:
       KKFILEVIEW_VERSION: ${{ inputs.kkfileview_version || 'v4.4.0' }}
       BUILD_MODE: ${{ inputs.build_mode || 'source' }}
       BASE_IMAGE: ${{ inputs.base_image || 'cr.loongnix.cn/library/openjdk:8-buster' }}
+      OFFICE_PACKAGES: ${{ inputs.office_packages || '' }}
       IMAGE_NAME: ${{ inputs.image_name || 'kkfileview' }}
     steps:
       - name: Checkout workflow repository
@@ -105,9 +111,18 @@ jobs:
           docker buildx build \
             --platform linux/loong64 \
             --build-arg BASE_IMAGE="${BASE_IMAGE}" \
+            --build-arg OFFICE_PACKAGES="${OFFICE_PACKAGES}" \
             -t "${IMAGE_TAG}" \
             -f Dockerfile.loong64 \
             --load .
+
+      - name: Smoke test LibreOffice runtime
+        run: |
+          docker run --rm --platform linux/loong64 --entrypoint sh "${IMAGE_TAG}" -lc '
+            test -d "${OFFICE_HOME:-/opt/libreoffice}"
+            test -x "${OFFICE_HOME:-/opt/libreoffice}/program/soffice" || test -x "${OFFICE_HOME:-/opt/libreoffice}/program/soffice.bin"
+            printf "office.home=%s\n" "${OFFICE_HOME:-/opt/libreoffice}"
+          '
 
       - name: Export image tar
         run: docker save -o "${TAR_NAME}" "${IMAGE_TAG}"
