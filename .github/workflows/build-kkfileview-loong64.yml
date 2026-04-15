@@ -139,6 +139,7 @@ jobs:
 
           echo "=== Building Docker image for loong64 ==="
           echo "Base image: ${BASE_IMAGE}"
+          echo "Dockerfile: ${DOCKERFILE}"
           echo "Image tag: ${IMAGE_TAG}"
           echo "Platform: linux/loong64"
           
@@ -148,7 +149,7 @@ jobs:
             --build-arg BASE_IMAGE="${BASE_IMAGE}" \
             --progress=plain \
             -t "${IMAGE_TAG}" \
-            -f Dockerfile.loong64 \
+            -f "${DOCKERFILE}" \
             --load .
           
           echo "=== Build completed successfully ==="
