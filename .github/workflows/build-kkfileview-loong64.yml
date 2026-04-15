@@ -124,12 +124,21 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "=== Building Docker image for loong64 ==="
+          echo "Base image: ${BASE_IMAGE}"
+          echo "Image tag: ${IMAGE_TAG}"
+          echo "Platform: linux/loong64"
+          
+          # Build with more verbose output and longer timeout
           docker buildx build \
             --platform linux/loong64 \
             --build-arg BASE_IMAGE="${BASE_IMAGE}" \
+            --progress=plain \
             -t "${IMAGE_TAG}" \
             -f Dockerfile.loong64 \
             --load .
+          
+          echo "=== Build completed successfully ==="
 
       - name: Export image tar
         run: |

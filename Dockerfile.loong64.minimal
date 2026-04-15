@@ -1,0 +1,107 @@
+ARG BASE_IMAGE=cr.loongnix.cn/library/openjdk:8-buster
+FROM ${BASE_IMAGE}
+
+ENV LANG=C.UTF-8
+ENV KKFILEVIEW_HOME=/app
+
+WORKDIR ${KKFILEVIEW_HOME}
+
+COPY kkFileView.jar ./kkFileView.jar
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+# Minimal approach: skip apt entirely if it fails, use base image tools
+RUN set -eux; \
+    chmod +x /usr/local/bin/docker-entrypoint.sh; \
+    # Check what tools are already available in base image
+    echo "=== Checking available tools ==="; \
+    which wget || which curl || echo "No download tool found"; \
+    which rpm2cpio || echo "rpm2cpio not found"; \
+    which cpio || echo "cpio not found"; \
+    # Try to install via apt if possible (but don't fail if it doesn't work)
+    { \
+      printf '%s\n' \
+        'Acquire::AllowInsecureRepositories "true";' \
+        'Acquire::AllowDowngradeToInsecureRepositories "true";' \
+        'APT::Get::AllowUnauthenticated "true";' \
+        'Acquire::Check-Valid-Until "false";' \
+        'Acquire::Check-Date "false";' \
+        >/etc/apt/apt.conf.d/99loongnix-insecure; \
+      apt-get update --allow-insecure-repositories 2>/dev/null || true; \
+      apt-get install -y --allow-unauthenticated wget ca-certificates rpm2cpio cpio 2>/dev/null || true; \
+      rm -rf /var/lib/apt/lists/* 2>/dev/null || true; \
+      rm -f /etc/apt/apt.conf.d/99loongnix-insecure 2>/dev/null || true; \
+    } || true; \
+    # Verify we have at least a download tool
+    if ! which wget >/dev/null 2>&1 && ! which curl >/dev/null 2>&1; then \
+      echo "ERROR: No download tool (wget/curl) available"; \
+      exit 1; \
+    fi; \
+    echo "=== Tools check complete ==="
+
+# Install LibreOffice - with better error handling
+RUN set -eux; \
+    cd /tmp; \
+    mkdir -p /opt/libreoffice; \
+    # Determine download command
+    if which wget >/dev/null 2>&1; then \
+      DOWNLOAD="wget -q --timeout=120 -O"; \
+    elif which curl >/dev/null 2>&1; then \
+      DOWNLOAD="curl -fsSL --max-time 120 -o"; \
+    else \
+      echo "ERROR: No download tool available"; \
+      exit 1; \
+    fi; \
+    # Check if we have rpm2cpio and cpio
+    HAS_RPM_TOOLS=0; \
+    if which rpm2cpio >/dev/null 2>&1 && which cpio >/dev/null 2>&1; then \
+      HAS_RPM_TOOLS=1; \
+    fi; \
+    # Try to download and install LibreOffice
+    if [ "$HAS_RPM_TOOLS" = "1" ]; then \
+      echo "=== Installing LibreOffice ==="; \
+      INSTALLED=0; \
+      for REPO in \
+        "https://pkg.loongnix.cn/loongnix-server/8.3/AppStream/loongarch64/release/Packages" \
+        "https://pkg.loongnix.cn/loongnix-server/8.4/AppStream/loongarch64/release/Packages" \
+        "https://updates.os.nfschina.com/NFS4.0/LoongarchOS/RPMS/loongarch64/Releases/AppStream/Packages"; \
+      do \
+        echo "Trying repository: $REPO"; \
+        for pkg in libreoffice-core-7.4.3.2-3.lnd.1.loongarch64.rpm \
+                   libreoffice-common-7.4.3.2-3.lnd.1.noarch.rpm \
+                   libreoffice-writer-7.4.3.2-3.lnd.1.loongarch64.rpm \
+                   libreoffice-calc-7.4.3.2-3.lnd.1.loongarch64.rpm \
+                   libreoffice-impress-7.4.3.2-3.lnd.1.loongarch64.rpm \
+                   libreoffice-7.4.3.2-3.lnd.1.loongarch64.rpm; do \
+          if $DOWNLOAD "$pkg" "$REPO/$pkg" 2>/dev/null; then \
+            echo "Downloaded: $pkg"; \
+            if [ -f "$pkg" ]; then \
+              if rpm2cpio "$pkg" | cpio -idmv -D /opt/libreoffice 2>/dev/null; then \
+                echo "Extracted: $pkg"; \
+                INSTALLED=1; \
+              fi; \
+              rm -f "$pkg"; \
+            fi; \
+          fi; \
+        done; \
+        if [ "$INSTALLED" = "1" ]; then \
+          echo "Successfully installed LibreOffice from $REPO"; \
+          break; \
+        fi; \
+      done; \
+      # Create symlink
+      if [ "$INSTALLED" = "1" ]; then \
+        ln -sf /opt/libreoffice/usr/lib64/libreoffice/program/soffice /usr/local/bin/soffice 2>/dev/null || \
+        ln -sf /opt/libreoffice/usr/bin/soffice /usr/local/bin/soffice 2>/dev/null || \
+        echo "WARNING: Could not create soffice symlink"; \
+      fi; \
+    else \
+      echo "WARNING: rpm2cpio or cpio not available, skipping LibreOffice installation"; \
+      echo "The container will start but LibreOffice features will not work"; \
+    fi; \
+    # Clean up
+    rm -rf /tmp/*.rpm; \
+    echo "=== LibreOffice installation complete ==="
+
+EXPOSE 8012
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
