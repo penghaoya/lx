@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=cr.loongnix.cn/library/openjdk:8-buster
+ARG BASE_IMAGE=cr.loongnix.cn/loongnix-server:8.3
 FROM ${BASE_IMAGE}
 
 ENV LANG=C.UTF-8
