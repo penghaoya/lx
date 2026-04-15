@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=cr.loongnix.cn/library/loongnix-server:8.3
+ARG BASE_IMAGE=cr.loongnix.cn/library/openjdk:8-buster
 FROM ${BASE_IMAGE}
 
 ENV LANG=C.UTF-8
@@ -11,23 +11,15 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 RUN set -eux; \
     chmod +x /usr/local/bin/docker-entrypoint.sh; \
-    if command -v apt-get >/dev/null 2>&1; then \
-      printf '%s\n' \
-        'Acquire::AllowInsecureRepositories "true";' \
-        'Acquire::AllowDowngradeToInsecureRepositories "true";' \
-        'APT::Get::AllowUnauthenticated "true";' \
-        >/etc/apt/apt.conf.d/99loongnix-insecure; \
-      apt-get update --allow-insecure-repositories || true; \
-      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends --allow-unauthenticated libreoffice libreoffice-writer libreoffice-calc libreoffice-impress fonts-dejavu-core ca-certificates; \
-      rm -f /etc/apt/apt.conf.d/99loongnix-insecure; \
-      rm -rf /var/lib/apt/lists/*; \
-    elif command -v yum >/dev/null 2>&1; then \
-      yum install -y libreoffice dejavu-sans-fonts ca-certificates; \
-      yum clean all; \
-    else \
-      echo "Unsupported package manager: cannot install LibreOffice automatically" >&2; \
-      exit 1; \
-    fi
+    apt-get update || true; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends wget ca-certificates fonts-dejavu-core; \
+    rm -rf /var/lib/apt/lists/*; \
+    cd /tmp && \
+    wget -q --timeout=300 --tries=3 https://download.documentfoundation.org/libreoffice/stable/7.6.7/deb/x86_64/LibreOffice_7.6.7_Linux_x86-64_deb.tar.gz -O lo.tar.gz || \
+    wget -q --timeout=300 --tries=3 https://downloadarchive.documentfoundation.org/libreoffice/old/7.6.7.2/deb/x86_64/LibreOffice_7.6.7.2_Linux_x86-64_deb.tar.gz -O lo.tar.gz; \
+    tar -xzf lo.tar.gz; \
+    dpkg -i LibreOffice_*/DEBS/*.deb || (apt-get update && apt-get install -f -y); \
+    rm -rf /tmp/LibreOffice_* /tmp/lo.tar.gz
 
 EXPOSE 8012
 

@@ -27,7 +27,7 @@ on:
       base_image:
         description: loong64 runtime base image for kkFileView v4.x
         required: true
-        default: cr.loongnix.cn/library/loongnix-server:8.3
+        default: cr.loongnix.cn/library/openjdk:8-buster
         type: string
       image_name:
         description: Output Docker image name
@@ -44,7 +44,7 @@ jobs:
     env:
       KKFILEVIEW_VERSION: ${{ inputs.kkfileview_version || 'v4.4.0' }}
       BUILD_MODE: ${{ inputs.build_mode || 'source' }}
-      BASE_IMAGE: ${{ inputs.base_image || 'cr.loongnix.cn/library/loongnix-server:8.3' }}
+      BASE_IMAGE: ${{ inputs.base_image || 'cr.loongnix.cn/library/openjdk:8-buster' }}
       IMAGE_NAME: ${{ inputs.image_name || 'kkfileview' }}
       JAVA_VERSION: "8"
     steps:
