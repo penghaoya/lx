@@ -28,7 +28,19 @@ on:
         description: loong64 runtime base image for kkFileView v4.x
         required: true
         default: cr.loongnix.cn/library/openjdk:8-buster
-        type: string
+        type: choice
+        options:
+          - cr.loongnix.cn/library/openjdk:8-buster
+          - ghcr.io/loong64/debian:trixie-slim
+      dockerfile:
+        description: Which Dockerfile to use
+        required: true
+        default: Dockerfile.loong64.openjdk8
+        type: choice
+        options:
+          - Dockerfile.loong64.openjdk8
+          - Dockerfile.loong64
+          - Dockerfile.loong64.minimal
       image_name:
         description: Output Docker image name
         required: true
@@ -45,6 +57,7 @@ jobs:
       KKFILEVIEW_VERSION: ${{ inputs.kkfileview_version || 'v4.4.0' }}
       BUILD_MODE: ${{ inputs.build_mode || 'source' }}
       BASE_IMAGE: ${{ inputs.base_image || 'cr.loongnix.cn/library/openjdk:8-buster' }}
+      DOCKERFILE: ${{ inputs.dockerfile || 'Dockerfile.loong64.openjdk8' }}
       IMAGE_NAME: ${{ inputs.image_name || 'kkfileview' }}
       JAVA_VERSION: "8"
     steps:

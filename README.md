@@ -22,7 +22,7 @@
 
 - `kkfileview_version`：例如 `v4.4.0`
 - `build_mode`：`release` 或 `source`，默认建议 `source`
-- `base_image`：默认 `cr.loongnix.cn/library/openjdk:8-buster`（通过直接下载方式安装 LibreOffice，避免 apt 仓库问题）
+- `base_image`：默认 `ghcr.io/loong64/debian:trixie-slim`（使用 loong64 社区维护的可用仓库）
 - `image_name`：默认 `kkfileview`
 
 工作流会校验版本号，只有 `v4.x` 会继续执行；如果误填 `v5.x` 或其他版本，会在开始阶段直接失败并提示。
