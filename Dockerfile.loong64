@@ -17,7 +17,7 @@ RUN set -eux; \
         'Acquire::AllowDowngradeToInsecureRepositories "true";' \
         'APT::Get::AllowUnauthenticated "true";' \
         >/etc/apt/apt.conf.d/99loongnix-insecure; \
-      apt-get update; \
+      apt-get update --allow-insecure-repositories || true; \
       DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends --allow-unauthenticated libreoffice libreoffice-writer libreoffice-calc libreoffice-impress fonts-dejavu-core ca-certificates; \
       rm -f /etc/apt/apt.conf.d/99loongnix-insecure; \
       rm -rf /var/lib/apt/lists/*; \
