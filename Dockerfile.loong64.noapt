@@ -1,0 +1,32 @@
+ARG BASE_IMAGE=cr.loongnix.cn/library/openjdk:8-buster
+FROM ${BASE_IMAGE}
+
+ENV LANG=C.UTF-8
+ENV KKFILEVIEW_HOME=/app
+
+WORKDIR ${KKFILEVIEW_HOME}
+
+COPY kkFileView.jar ./kkFileView.jar
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+# Skip apt entirely - just use what's in the base image
+RUN set -eux; \
+    chmod +x /usr/local/bin/docker-entrypoint.sh; \
+    echo "=== Checking base image tools ==="; \
+    echo "Java:"; \
+    which java || echo "  Java not found"; \
+    echo "Download tools:"; \
+    which wget && echo "  wget: available" || echo "  wget: not available"; \
+    which curl && echo "  curl: available" || echo "  curl: not available"; \
+    echo "Extraction tools:"; \
+    which rpm2cpio && echo "  rpm2cpio: available" || echo "  rpm2cpio: not available"; \
+    which cpio && echo "  cpio: available" || echo "  cpio: not available"; \
+    echo "=== Base image check complete ==="; \
+    echo ""; \
+    echo "NOTE: This image will run kkFileView with Java from the base image."; \
+    echo "LibreOffice installation is skipped due to missing tools."; \
+    echo "Document conversion features will not be available."
+
+EXPOSE 8012
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

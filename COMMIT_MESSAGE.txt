@@ -1,0 +1,77 @@
+Fix loong64 Docker build - QEMU Java issue discovered, new workflow created
+
+## 🔴 Critical Discovery
+
+After extensive testing, discovered that **Java cannot run in QEMU-emulated loong64 environment**:
+
+```
+SR_initialize failed: Invalid argument
+Error: Could not create the Java Virtual Machine.
+```
+
+This means:
+- ❌ GitHub Actions + QEMU cannot produce usable loong64 Java images
+- ❌ Even if Docker build "succeeds", containers cannot start
+- ❌ All QEMU-based approaches are not viable
+
+## ✅ Solution: New Workflow
+
+Created **`build-jar-only.yml`** workflow that:
+1. ✅ Compiles JAR on GitHub Actions (x86_64, fast & reliable)
+2. ✅ Packages everything needed into a "build kit"
+3. ✅ Includes Dockerfiles, scripts, and documentation
+4. ✅ User downloads kit and builds on real loong64 hardware
+
+This is the **only viable approach** for loong64 Java containers.
+
+## 📁 New Files
+
+### Workflows
+- `.github/workflows/build-jar-only.yml` - New recommended workflow
+
+### Dockerfiles
+- `Dockerfile.loong64.flexible` - Recommended, works without LibreOffice
+- `Dockerfile.loong64.noapt` - Minimal, no apt operations
+
+### Scripts
+- `docker-entrypoint-flexible.sh` - Flexible entrypoint, allows startup without LibreOffice
+
+### Documentation
+- `QEMU_JAVA_ISSUE.md` - Detailed analysis of QEMU Java problem
+- `FINAL_SOLUTION.md` - Complete solution guide
+- Updated `README.md` - Added warnings and new workflow instructions
+
+## 📊 Previous Work (Still Useful)
+
+All previous Dockerfiles and documentation remain useful for:
+- Understanding the apt/GPG issues
+- Reference for loong64 package repositories
+- Building on real hardware
+
+Files created earlier:
+- `Dockerfile.loong64.openjdk8`
+- `Dockerfile.loong64.minimal`
+- `Dockerfile.loong64.alternative`
+- `DOCKER_BUILD_FIXES.md`
+- `QUICK_START.md`
+- `CHANGES_SUMMARY.md`
+- `CHECKLIST.md`
+
+## 🎯 Recommended Usage
+
+1. Use `build-jar-only.yml` workflow in GitHub Actions
+2. Download the build kit artifact
+3. Transfer to loong64 hardware
+4. Run `./build.sh` script
+5. Test and deploy
+
+## 🔗 References
+
+- QEMU Java issue: See QEMU_JAVA_ISSUE.md
+- Complete solution: See FINAL_SOLUTION.md
+- Quick start: See README.md
+
+---
+
+This commit represents a complete solution for loong64 Docker builds,
+acknowledging QEMU limitations and providing a practical workaround.

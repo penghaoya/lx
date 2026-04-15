@@ -1,0 +1,186 @@
+name: Build kkFileView loong64 (Self-Hosted Runner)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-with-self-hosted.yml
+      - Dockerfile.loong64*
+      - docker-entrypoint*.sh
+  workflow_dispatch:
+    inputs:
+      kkfileview_version:
+        description: kkFileView v4 release version
+        required: true
+        default: v4.4.0
+        type: string
+      build_mode:
+        description: Use release jar or build from source
+        required: true
+        default: source
+        type: choice
+        options:
+          - release
+          - source
+      dockerfile:
+        description: Which Dockerfile to use
+        required: true
+        default: Dockerfile.loong64.flexible
+        type: choice
+        options:
+          - Dockerfile.loong64.flexible
+          - Dockerfile.loong64.noapt
+      image_name:
+        description: Output Docker image name
+        required: true
+        default: kkfileview
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # This requires a self-hosted runner on loong64 hardware
+    # To set up: https://docs.github.com/en/actions/hosting-your-own-runners
+    runs-on: [self-hosted, linux, loongarch64]
+    
+    env:
+      KKFILEVIEW_VERSION: ${{ inputs.kkfileview_version || 'v4.4.0' }}
+      BUILD_MODE: ${{ inputs.build_mode || 'source' }}
+      DOCKERFILE: ${{ inputs.dockerfile || 'Dockerfile.loong64.flexible' }}
+      IMAGE_NAME: ${{ inputs.image_name || 'kkfileview' }}
+      JAVA_VERSION: "8"
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate supported version
+        run: |
+          case "${KKFILEVIEW_VERSION}" in
+            v4.*) ;;
+            *)
+              echo "Only kkFileView v4.x is supported, got: ${KKFILEVIEW_VERSION}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Set artifact names
+        id: meta
+        run: |
+          set -euo pipefail
+          VERSION_TAG="${KKFILEVIEW_VERSION#v}"
+          echo "VERSION_TAG=${VERSION_TAG}" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=${IMAGE_NAME}:loong64-${VERSION_TAG}" >> "$GITHUB_ENV"
+          echo "TAR_NAME=${IMAGE_NAME}-loong64-${VERSION_TAG}.tar" >> "$GITHUB_ENV"
+          echo "version_tag=${VERSION_TAG}" >> "$GITHUB_OUTPUT"
+          echo "tar_name=${IMAGE_NAME}-loong64-${VERSION_TAG}.tar" >> "$GITHUB_OUTPUT"
+
+      - name: Check Java availability
+        run: |
+          echo "=== Checking Java ==="
+          java -version || echo "WARNING: Java not found"
+          which mvn && mvn -version || echo "WARNING: Maven not found"
+
+      - name: Try downloading released jar
+        if: env.BUILD_MODE == 'release'
+        id: release_jar
+        run: |
+          VERSION_TAG="${KKFILEVIEW_VERSION#v}"
+          JAR_URL="https://github.com/kekingcn/kkFileView/releases/download/${KKFILEVIEW_VERSION}/kkFileView-${VERSION_TAG}.jar"
+          if curl -fL "$JAR_URL" -o kkFileView.jar; then
+            echo "source_mode=release" >> "$GITHUB_OUTPUT"
+          else
+            echo "Release jar not found, fallback to source build"
+            rm -f kkFileView.jar
+            echo "source_mode=fallback" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build jar from source
+        if: env.BUILD_MODE == 'source' || steps.release_jar.outputs.source_mode == 'fallback'
+        run: |
+          set -euo pipefail
+          
+          git clone --depth 1 --branch "${KKFILEVIEW_VERSION}" https://github.com/kekingcn/kkFileView.git upstream-kkfileview
+          cd upstream-kkfileview
+          mvn -B -ntp package -Dmaven.test.skip=true --file pom.xml
+          
+          JAR_PATH="$(find server/target -maxdepth 1 -type f -name 'kkFileView-*.jar' ! -name '*sources*' ! -name '*javadoc*' | head -n 1)"
+          test -n "${JAR_PATH}"
+          cp "${JAR_PATH}" "$GITHUB_WORKSPACE/kkFileView.jar"
+
+      - name: Verify jar exists
+        run: |
+          set -euo pipefail
+          test -f kkFileView.jar
+          ls -lh kkFileView.jar
+
+      - name: Build Docker image
+        run: |
+          set -euo pipefail
+          
+          echo "=== Building Docker image on native loong64 ==="
+          echo "Dockerfile: ${DOCKERFILE}"
+          echo "Image tag: ${IMAGE_TAG}"
+          
+          docker build \
+            -t "${IMAGE_TAG}" \
+            -f "${DOCKERFILE}" \
+            .
+          
+          echo "=== Build completed ==="
+
+      - name: Test image
+        run: |
+          set -euo pipefail
+          
+          echo "=== Testing image ==="
+          
+          # Test Java
+          echo "Testing Java..."
+          docker run --rm "${IMAGE_TAG}" java -version
+          
+          # Test jar exists
+          echo "Testing jar file..."
+          docker run --rm "${IMAGE_TAG}" ls -lh /app/kkFileView.jar
+          
+          # Test entrypoint
+          echo "Testing entrypoint..."
+          docker run --rm "${IMAGE_TAG}" cat /usr/local/bin/docker-entrypoint.sh
+          
+          echo "=== Tests passed ==="
+
+      - name: Export image tar
+        run: |
+          set -euo pipefail
+          docker save -o "${TAR_NAME}" "${IMAGE_TAG}"
+          ls -lh "${TAR_NAME}"
+
+      - name: Upload image tar
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.IMAGE_NAME }}-loong64-${{ steps.meta.outputs.version_tag }}
+          path: ${{ steps.meta.outputs.tar_name }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Build summary
+        run: |
+          echo "## ✅ Build Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Image Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag:** ${IMAGE_TAG}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${{ steps.meta.outputs.version_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dockerfile:** ${DOCKERFILE}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifact" >> $GITHUB_STEP_SUMMARY
+          echo "- **File:** ${{ steps.meta.outputs.tar_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Size:** $(du -h ${TAR_NAME} | cut -f1)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Usage" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "docker load -i ${{ steps.meta.outputs.tar_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker run -d -p 8012:8012 ${IMAGE_TAG}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

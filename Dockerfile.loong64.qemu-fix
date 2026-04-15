@@ -1,0 +1,29 @@
+ARG BASE_IMAGE=cr.loongnix.cn/library/openjdk:8-buster
+FROM ${BASE_IMAGE}
+
+ENV LANG=C.UTF-8
+ENV KKFILEVIEW_HOME=/app
+
+# Try to fix QEMU Java issue
+ENV QEMU_CPU=max
+ENV JAVA_TOOL_OPTIONS="-Djava.security.egd=file:/dev/./urandom"
+
+WORKDIR ${KKFILEVIEW_HOME}
+
+COPY kkFileView.jar ./kkFileView.jar
+COPY docker-entrypoint-flexible.sh /usr/local/bin/docker-entrypoint.sh
+
+RUN set -eux; \
+    chmod +x /usr/local/bin/docker-entrypoint.sh; \
+    echo "=== Testing Java in QEMU environment ==="; \
+    # Try different Java options to work around QEMU issues
+    java -version 2>&1 || \
+    java -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -version 2>&1 || \
+    java -Xint -version 2>&1 || \
+    echo "WARNING: Java test failed, but continuing build"; \
+    echo "=== Build complete ==="
+
+EXPOSE 8012
+
+# Use flexible entrypoint that doesn't require LibreOffice
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

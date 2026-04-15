@@ -1,0 +1,249 @@
+name: Build kkFileView JAR (for loong64 manual build)
+
+on:
+  workflow_dispatch:
+    inputs:
+      kkfileview_version:
+        description: kkFileView v4 release version
+        required: true
+        default: v4.4.0
+        type: string
+      build_mode:
+        description: Use release jar or build from source
+        required: true
+        default: source
+        type: choice
+        options:
+          - release
+          - source
+
+permissions:
+  contents: read
+
+jobs:
+  build-jar:
+    runs-on: ubuntu-24.04
+    env:
+      KKFILEVIEW_VERSION: ${{ inputs.kkfileview_version || 'v4.4.0' }}
+      BUILD_MODE: ${{ inputs.build_mode || 'source' }}
+    
+    steps:
+      - name: Checkout workflow repository
+        uses: actions/checkout@v4
+
+      - name: Validate supported version
+        run: |
+          case "${KKFILEVIEW_VERSION}" in
+            v4.*) ;;
+            *)
+              echo "Only kkFileView v4.x is supported by this workflow, got: ${KKFILEVIEW_VERSION}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Set artifact names
+        id: meta
+        run: |
+          set -euo pipefail
+          VERSION_TAG="${KKFILEVIEW_VERSION#v}"
+          echo "VERSION_TAG=${VERSION_TAG}" >> "$GITHUB_ENV"
+          echo "version_tag=${VERSION_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "8"
+
+      - name: Try downloading released jar
+        if: env.BUILD_MODE == 'release'
+        id: release_jar
+        run: |
+          VERSION_TAG="${KKFILEVIEW_VERSION#v}"
+          JAR_URL="https://github.com/kekingcn/kkFileView/releases/download/${KKFILEVIEW_VERSION}/kkFileView-${VERSION_TAG}.jar"
+          if curl -fL "$JAR_URL" -o kkFileView.jar; then
+            echo "source_mode=release" >> "$GITHUB_OUTPUT"
+            echo "Downloaded release jar successfully"
+          else
+            echo "Public release jar not found for ${KKFILEVIEW_VERSION}, fallback to source build"
+            rm -f kkFileView.jar
+            echo "source_mode=fallback" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build jar from source
+        if: env.BUILD_MODE == 'source' || steps.release_jar.outputs.source_mode == 'fallback'
+        run: |
+          set -euo pipefail
+          
+          echo "Cloning kkFileView repository..."
+          git clone --depth 1 --branch "${KKFILEVIEW_VERSION}" https://github.com/kekingcn/kkFileView.git upstream-kkfileview
+          cd upstream-kkfileview
+          
+          echo "Building with Maven..."
+          mvn -B -ntp package -Dmaven.test.skip=true --file pom.xml
+          
+          echo "Finding built jar..."
+          JAR_PATH="$(find server/target -maxdepth 1 -type f -name 'kkFileView-*.jar' ! -name '*sources*' ! -name '*javadoc*' | head -n 1)"
+          test -n "${JAR_PATH}"
+          
+          echo "Copying jar to workspace..."
+          cp "${JAR_PATH}" "$GITHUB_WORKSPACE/kkFileView.jar"
+          
+          echo "Build complete!"
+
+      - name: Verify jar exists
+        run: |
+          set -euo pipefail
+          test -f kkFileView.jar
+          ls -lh kkFileView.jar
+          echo "JAR file ready for download"
+
+      - name: Copy Dockerfiles and scripts
+        run: |
+          set -euo pipefail
+          mkdir -p loong64-build-kit
+          cp kkFileView.jar loong64-build-kit/
+          cp docker-entrypoint.sh loong64-build-kit/ || true
+          cp docker-entrypoint-flexible.sh loong64-build-kit/ || true
+          cp Dockerfile.loong64* loong64-build-kit/ || true
+          cp QEMU_JAVA_ISSUE.md loong64-build-kit/ || true
+          
+          # Create README for the build kit
+          cat > loong64-build-kit/README.md << 'EOF'
+          # kkFileView loong64 Build Kit
+          
+          This package contains everything needed to build kkFileView Docker image on loong64 hardware.
+          
+          ## Contents
+          
+          - `kkFileView.jar` - Pre-built kkFileView application
+          - `Dockerfile.loong64.*` - Various Dockerfile options
+          - `docker-entrypoint*.sh` - Container entry point scripts
+          - `QEMU_JAVA_ISSUE.md` - Important information about QEMU limitations
+          
+          ## Build Instructions (on loong64 hardware)
+          
+          ```bash
+          # 1. Extract this package
+          tar -xzf kkfileview-loong64-build-kit-*.tar.gz
+          cd loong64-build-kit
+          
+          # 2. Build Docker image (recommended Dockerfile)
+          docker build -f Dockerfile.loong64.flexible -t kkfileview:loong64 .
+          
+          # 3. Test the image
+          docker run -d -p 8012:8012 --name kkfileview kkfileview:loong64
+          
+          # 4. Check logs
+          docker logs -f kkfileview
+          
+          # 5. Test access
+          curl http://localhost:8012
+          
+          # 6. Export for distribution (optional)
+          docker save -o kkfileview-loong64.tar kkfileview:loong64
+          ```
+          
+          ## Important Notes
+          
+          - **Must be built on real loong64 hardware** - QEMU emulation does not work
+          - See `QEMU_JAVA_ISSUE.md` for details about why QEMU fails
+          - The flexible entrypoint allows the container to start even without LibreOffice
+          
+          ## Dockerfile Options
+          
+          - `Dockerfile.loong64.flexible` - Recommended, works without LibreOffice
+          - `Dockerfile.loong64.noapt` - Minimal, no apt operations
+          - `Dockerfile.loong64.openjdk8` - Full featured (if apt works)
+          
+          ## Support
+          
+          For issues, please refer to the main repository.
+          EOF
+          
+          # Create build script
+          cat > loong64-build-kit/build.sh << 'EOF'
+          #!/bin/bash
+          set -euo pipefail
+          
+          echo "=== kkFileView loong64 Docker Build Script ==="
+          echo ""
+          
+          # Check if running on loong64
+          ARCH=$(uname -m)
+          if [ "$ARCH" != "loongarch64" ]; then
+            echo "WARNING: Current architecture is $ARCH, not loongarch64"
+            echo "This build should be run on real loong64 hardware"
+            read -p "Continue anyway? (y/N) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+              exit 1
+            fi
+          fi
+          
+          # Select Dockerfile
+          echo "Available Dockerfiles:"
+          echo "  1) Dockerfile.loong64.flexible (recommended)"
+          echo "  2) Dockerfile.loong64.noapt"
+          echo "  3) Dockerfile.loong64.openjdk8"
+          echo ""
+          read -p "Select Dockerfile (1-3, default: 1): " CHOICE
+          CHOICE=${CHOICE:-1}
+          
+          case $CHOICE in
+            1) DOCKERFILE="Dockerfile.loong64.flexible" ;;
+            2) DOCKERFILE="Dockerfile.loong64.noapt" ;;
+            3) DOCKERFILE="Dockerfile.loong64.openjdk8" ;;
+            *) echo "Invalid choice"; exit 1 ;;
+          esac
+          
+          echo "Using: $DOCKERFILE"
+          echo ""
+          
+          # Build
+          IMAGE_TAG="kkfileview:loong64-$(date +%Y%m%d)"
+          echo "Building image: $IMAGE_TAG"
+          docker build -f "$DOCKERFILE" -t "$IMAGE_TAG" .
+          
+          echo ""
+          echo "=== Build Complete ==="
+          echo "Image: $IMAGE_TAG"
+          echo ""
+          echo "To run:"
+          echo "  docker run -d -p 8012:8012 --name kkfileview $IMAGE_TAG"
+          echo ""
+          echo "To export:"
+          echo "  docker save -o kkfileview-loong64.tar $IMAGE_TAG"
+          EOF
+          
+          chmod +x loong64-build-kit/build.sh
+          
+          # Create tarball
+          tar -czf kkfileview-loong64-build-kit-${{ steps.meta.outputs.version_tag }}.tar.gz loong64-build-kit/
+          ls -lh kkfileview-loong64-build-kit-${{ steps.meta.outputs.version_tag }}.tar.gz
+
+      - name: Upload build kit
+        uses: actions/upload-artifact@v4
+        with:
+          name: kkfileview-loong64-build-kit-${{ steps.meta.outputs.version_tag }}
+          path: kkfileview-loong64-build-kit-${{ steps.meta.outputs.version_tag }}.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Build summary
+        run: |
+          echo "## ✅ Build Kit Created Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Package Contents" >> $GITHUB_STEP_SUMMARY
+          echo "- kkFileView JAR (version ${{ steps.meta.outputs.version_tag }})" >> $GITHUB_STEP_SUMMARY
+          echo "- Multiple Dockerfile options" >> $GITHUB_STEP_SUMMARY
+          echo "- Entry point scripts" >> $GITHUB_STEP_SUMMARY
+          echo "- Build instructions and scripts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download the build kit artifact" >> $GITHUB_STEP_SUMMARY
+          echo "2. Transfer to loong64 hardware" >> $GITHUB_STEP_SUMMARY
+          echo "3. Extract and run \`./build.sh\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚠️ Important" >> $GITHUB_STEP_SUMMARY
+          echo "This MUST be built on real loong64 hardware. QEMU emulation does not work due to Java VM initialization issues." >> $GITHUB_STEP_SUMMARY

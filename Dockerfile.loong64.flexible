@@ -1,0 +1,34 @@
+ARG BASE_IMAGE=cr.loongnix.cn/library/openjdk:8-buster
+FROM ${BASE_IMAGE}
+
+ENV LANG=C.UTF-8
+ENV KKFILEVIEW_HOME=/app
+
+WORKDIR ${KKFILEVIEW_HOME}
+
+COPY kkFileView.jar ./kkFileView.jar
+COPY docker-entrypoint-flexible.sh /usr/local/bin/docker-entrypoint.sh
+
+# Minimal setup - just make entrypoint executable
+RUN set -eux; \
+    chmod +x /usr/local/bin/docker-entrypoint.sh; \
+    echo "=== kkFileView Docker Image ==="; \
+    echo "Base image: ${BASE_IMAGE}"; \
+    echo ""; \
+    echo "Checking available tools:"; \
+    if command -v java >/dev/null 2>&1; then \
+      echo "  ✓ Java found"; \
+    else \
+      echo "  ✗ Java NOT found - container will fail to start"; \
+    fi; \
+    if command -v soffice >/dev/null 2>&1; then \
+      echo "  ✓ LibreOffice found"; \
+    else \
+      echo "  ⚠ LibreOffice NOT found - document conversion disabled"; \
+    fi; \
+    echo ""; \
+    echo "Image build complete."
+
+EXPOSE 8012
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
