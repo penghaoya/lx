@@ -7,13 +7,14 @@ on:
     paths:
       - .github/workflows/build-kkfileview-loong64.yml
       - Dockerfile.loong64
+      - docker-entrypoint.sh
       - README.md
   workflow_dispatch:
     inputs:
       kkfileview_version:
         description: kkFileView release version
         required: true
-        default: v4.4.0
+        default: v5.0.0
         type: string
       build_mode:
         description: Use release jar or build from source
@@ -24,14 +25,17 @@ on:
           - release
           - source
       base_image:
-        description: Base image for the loong64 runtime image
-        required: true
-        default: cr.loongnix.cn/library/openjdk:8-buster
+        description: Optional loong64 runtime base image; leave empty to auto-pick when possible
+        required: false
         type: string
       image_name:
         description: Output Docker image name
         required: true
         default: kkfileview
+        type: string
+      java_version:
+        description: Optional build JDK override; leave empty to detect from upstream pom.xml
+        required: false
         type: string
 
 permissions:
@@ -41,29 +45,64 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     env:
-      KKFILEVIEW_VERSION: ${{ inputs.kkfileview_version || 'v4.4.0' }}
+      KKFILEVIEW_VERSION: ${{ inputs.kkfileview_version || 'v5.0.0' }}
       BUILD_MODE: ${{ inputs.build_mode || 'source' }}
-      BASE_IMAGE: ${{ inputs.base_image || 'cr.loongnix.cn/library/openjdk:8-buster' }}
+      BASE_IMAGE_INPUT: ${{ inputs.base_image }}
       IMAGE_NAME: ${{ inputs.image_name || 'kkfileview' }}
+      JAVA_VERSION_INPUT: ${{ inputs.java_version }}
     steps:
       - name: Checkout workflow repository
         uses: actions/checkout@v4
 
-      - name: Set artifact names
+      - name: Resolve build metadata
         id: meta
         run: |
+          set -euo pipefail
+
           VERSION_TAG="${KKFILEVIEW_VERSION#v}"
+          VERSION_MAJOR="${VERSION_TAG%%.*}"
+          POM_URL="https://raw.githubusercontent.com/kekingcn/kkFileView/${KKFILEVIEW_VERSION}/pom.xml"
+
+          if [ -n "${JAVA_VERSION_INPUT}" ]; then
+            JAVA_VERSION="${JAVA_VERSION_INPUT}"
+          else
+            JAVA_VERSION="$(curl -fsSL "${POM_URL}" | sed -n 's:.*<java.version>\\(.*\\)</java.version>.*:\\1:p' | head -n 1 || true)"
+          fi
+
+          if [ -z "${JAVA_VERSION}" ]; then
+            if [ "${VERSION_MAJOR}" -ge 5 ]; then
+              JAVA_VERSION=21
+            else
+              JAVA_VERSION=8
+            fi
+          fi
+
+          if [ -n "${BASE_IMAGE_INPUT}" ]; then
+            BASE_IMAGE="${BASE_IMAGE_INPUT}"
+          elif [ "${JAVA_VERSION}" = "8" ]; then
+            BASE_IMAGE="cr.loongnix.cn/library/openjdk:8-buster"
+          else
+            echo "kkFileView ${KKFILEVIEW_VERSION} requires JDK ${JAVA_VERSION}." >&2
+            echo "Please provide a loong64-compatible runtime base image via the workflow input 'base_image'." >&2
+            exit 1
+          fi
+
           echo "VERSION_TAG=${VERSION_TAG}" >> "$GITHUB_ENV"
+          echo "JAVA_VERSION=${JAVA_VERSION}" >> "$GITHUB_ENV"
+          echo "BASE_IMAGE=${BASE_IMAGE}" >> "$GITHUB_ENV"
           echo "IMAGE_TAG=${IMAGE_NAME}:loong64-${VERSION_TAG}" >> "$GITHUB_ENV"
           echo "TAR_NAME=${IMAGE_NAME}-loong64-${VERSION_TAG}.tar" >> "$GITHUB_ENV"
           echo "version_tag=${VERSION_TAG}" >> "$GITHUB_OUTPUT"
+          echo "java_version=${JAVA_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "base_image=${BASE_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "tar_name=${IMAGE_NAME}-loong64-${VERSION_TAG}.tar" >> "$GITHUB_OUTPUT"
 
-      - name: Set up Java
+      - name: Set up Java ${{ steps.meta.outputs.java_version }}
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '8'
+          java-version: ${{ steps.meta.outputs.java_version }}
+          cache: maven
 
       - name: Enable QEMU for loong64
         uses: docker/setup-qemu-action@v3
@@ -90,18 +129,26 @@ jobs:
       - name: Build jar from source
         if: env.BUILD_MODE == 'source' || steps.release_jar.outputs.source_mode == 'fallback'
         run: |
+          set -euo pipefail
+
           git clone --depth 1 --branch "${KKFILEVIEW_VERSION}" https://github.com/kekingcn/kkFileView.git upstream-kkfileview
           cd upstream-kkfileview
-          mvn -B -ntp -pl server -am clean package -DskipTests
-          cp server/target/kkFileView-*.jar "$GITHUB_WORKSPACE/kkFileView.jar"
+          mvn -B -ntp package -Dmaven.test.skip=true --file pom.xml
+
+          JAR_PATH="$(find server/target -maxdepth 1 -type f -name 'kkFileView-*.jar' ! -name '*sources*' ! -name '*javadoc*' | head -n 1)"
+          test -n "${JAR_PATH}"
+          cp "${JAR_PATH}" "$GITHUB_WORKSPACE/kkFileView.jar"
 
       - name: Verify jar exists
         run: |
+          set -euo pipefail
           test -f kkFileView.jar
           ls -lh kkFileView.jar
 
       - name: Build loong64 image
         run: |
+          set -euo pipefail
+
           docker buildx build \
             --platform linux/loong64 \
             --build-arg BASE_IMAGE="${BASE_IMAGE}" \
@@ -110,7 +157,9 @@ jobs:
             --load .
 
       - name: Export image tar
-        run: docker save -o "${TAR_NAME}" "${IMAGE_TAG}"
+        run: |
+          set -euo pipefail
+          docker save -o "${TAR_NAME}" "${IMAGE_TAG}"
 
       - name: Upload offline image tar
         uses: actions/upload-artifact@v4

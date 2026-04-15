@@ -2,10 +2,13 @@
 
 这个仓库用于在 GitHub Actions 上构建可运行于 LoongArch64 服务器的 kkFileView Docker 镜像，并导出为离线部署所需的 tar 文件。
 
+镜像内会安装 kkFileView 文档预览所需的 LibreOffice，并在容器启动时自动探测 `office.home`，避免因路径配置错误导致服务启动失败。
+
 ## 工作流能力
 
 - 支持 `release` 模式：直接下载官方发布的 jar，速度更快
 - 支持 `source` 模式：从源码编译 jar
+- 根据上游 `pom.xml` 自动识别构建所需 JDK 版本
 - 使用 `docker buildx` + QEMU 构建 `linux/loong64` 镜像
 - 自动导出 `docker save` 生成的 tar 包并作为 Actions Artifact 上传
 
@@ -16,10 +19,16 @@
 3. 可以 push 到 `main` 自动触发，也可以手动运行 `Build kkFileView loong64 image` 工作流。
 4. 根据需要填写输入参数：
 
-- `kkfileview_version`：例如 `v4.4.0`
+- `kkfileview_version`：例如 `v5.0.0` 或 `v4.4.0`
 - `build_mode`：`release` 或 `source`，默认建议 `source`
-- `base_image`：默认 `openjdk:17-jdk-slim`
+- `base_image`：可选的 loong64 运行时基础镜像
 - `image_name`：默认 `kkfileview`
+- `java_version`：可选，留空时会自动按上游版本检测
+
+建议：
+
+- 构建 `v4.x` 时，可以留空 `base_image`，工作流会自动使用 `cr.loongnix.cn/library/openjdk:8-buster`
+- 构建 `v5.x` 时，请手动填写一个支持 `linux/loong64` 且带 JDK 21 的基础镜像；因为不同环境可用镜像源差异较大，工作流不会替你猜一个可能不存在的镜像标签
 
 ## 产物说明
 
@@ -36,9 +45,17 @@ docker load -i kkfileview-loong64-4.4.0.tar
 docker run -d --name kkfileview -p 8012:8012 -v /usr/share/fonts:/usr/share/fonts kkfileview:loong64-4.4.0
 ```
 
+如果需要排查启动问题，可以先看容器日志：
+
+```bash
+docker logs -f kkfileview
+```
+
 ## 注意事项
 
 - 上游 `v4.4.0` Release 没有公开 jar 资产，`release` 模式下载失败时会自动回退到源码编译。
+- 上游最新版本 `v5.0.0` 于 `2026-04-14` 发布，README 中涉及版本的示例如果与你实际线上版本不一致，请以工作流输入为准。
 - 如果默认基础镜像不支持 `linux/loong64`，请在工作流输入中替换为支持 LoongArch64 的 JDK 镜像。
 - kkFileView 常依赖宿主机字体，离线服务器建议挂载 `/usr/share/fonts`。
+- 镜像已包含 LibreOffice；如果启动日志仍提示 `找不到office组件`，通常说明镜像不是由当前仓库最新 `Dockerfile.loong64` 构建出来的。
 - 默认容器端口为 `8012`，如有冲突可改为 `-p 18012:8012`。
