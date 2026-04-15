@@ -2,27 +2,40 @@
 
 ## 问题描述
 
-在 GitHub Actions 中使用 QEMU 模拟 loong64 架构构建 Docker 镜像时，apt 包管理器无法找到特定版本的包，导致构建失败。
+在 GitHub Actions 中使用 QEMU 模拟 loong64 架构构建 Docker 镜像时遇到两个主要问题：
 
-错误信息：
+### 问题 1: apt 包版本不可用
 ```
 E: Can't find a source to download version 'X.X.X' of 'package:loongarch64'
 ```
 
+### 问题 2: GPG 签名验证失败
+```
+W: GPG error: http://pkg.loongnix.cn/loongnix DaoXiangHu-stable InRelease: At least one invalid signature was encountered.
+E: The repository 'http://pkg.loongnix.cn/loongnix DaoXiangHu-stable InRelease' is not signed.
+```
+
 ## 解决方案
 
-提供了三个版本的 Dockerfile，按推荐顺序：
+提供了三个版本的 Dockerfile，针对不同的基础镜像和场景：
 
-### 1. `Dockerfile.loong64` (推荐 - 已更新)
+### 1. `Dockerfile.loong64.openjdk8` ⭐ **强烈推荐**
+
+**基础镜像：** `cr.loongnix.cn/library/openjdk:8-buster`
+
+**优势：**
+- ✅ 基础镜像已包含 OpenJDK 8，无需额外安装
+- ✅ 完全容错的构建流程
+- ✅ 即使 apt 失败也能继续（使用基础镜像自带的工具）
+- ✅ 详细的日志输出和错误处理
+- ✅ 多仓库镜像自动切换
 
 **改进点：**
-- 分离了依赖安装和 LibreOffice 安装为两个 RUN 层，便于调试
-- 移除了对特定包版本的依赖，让 apt 自动选择可用版本
-- 添加了渐进式降级策略：先尝试安装所有包，失败后逐个安装
-- 增加了工具可用性检查
-- 尝试多个 LibreOffice 仓库镜像（8.3、8.4、NFS China）
-- 增加了超时时间（120秒）以适应 QEMU 模拟环境
-- 更好的错误处理和日志输出
+- 配置 apt 允许未认证的包
+- 渐进式降级策略：先尝试安装所有包，失败后逐个安装
+- 每个步骤都有验证和日志
+- 尝试多个 LibreOffice 仓库（8.3、8.4、NFS China）
+- 增加超时和重试机制
 
 **使用方法：**
 ```bash
@@ -30,18 +43,37 @@ docker buildx build \
   --platform linux/loong64 \
   --build-arg BASE_IMAGE=cr.loongnix.cn/library/openjdk:8-buster \
   -t kkfileview:loong64 \
+  -f Dockerfile.loong64.openjdk8 \
+  --load .
+```
+
+### 2. `Dockerfile.loong64` (适用于 Debian Trixie)
+
+**基础镜像：** `ghcr.io/loong64/debian:trixie-slim`
+
+**特点：**
+- 需要从外部仓库安装 OpenJDK 8
+- 配置了 loong64 Debian 仓库
+- 处理 GPG 签名问题
+- 适合需要最新 Debian 环境的场景
+
+**使用方法：**
+```bash
+docker buildx build \
+  --platform linux/loong64 \
+  --build-arg BASE_IMAGE=ghcr.io/loong64/debian:trixie-slim \
+  -t kkfileview:loong64 \
   -f Dockerfile.loong64 \
   --load .
 ```
 
-### 2. `Dockerfile.loong64.minimal` (备选方案)
+### 3. `Dockerfile.loong64.minimal` (最小化版本)
 
 **特点：**
-- 完全容错的构建流程
-- 即使 apt 完全失败也能继续构建
-- 支持 wget 或 curl 作为下载工具
-- 如果 rpm2cpio/cpio 不可用，会跳过 LibreOffice 安装但容器仍可启动
-- 适合调试和测试基础镜像功能
+- 完全跳过失败的 apt 操作
+- 支持 wget 或 curl
+- 如果工具不可用会跳过 LibreOffice 但容器仍可启动
+- 适合调试和测试
 
 **使用方法：**
 ```bash
@@ -52,19 +84,37 @@ docker buildx build \
   --load .
 ```
 
-### 3. `Dockerfile.loong64.alternative` (详细版本)
-
-**特点：**
-- 最详细的日志输出
-- 每个步骤都有验证
-- 适合深度调试
-
 ## GitHub Actions 改进
 
 更新了 `.github/workflows/build-kkfileview-loong64.yml`：
-- 添加了 `--progress=plain` 以显示完整构建日志
-- 添加了构建前的信息输出
-- 更清晰的步骤说明
+
+### 新增功能
+- ✅ **Dockerfile 选择器**：可以在运行时选择使用哪个 Dockerfile
+- ✅ **基础镜像选择器**：支持两种基础镜像
+  - `cr.loongnix.cn/library/openjdk:8-buster` (默认，推荐)
+  - `ghcr.io/loong64/debian:trixie-slim`
+- ✅ `--progress=plain` 显示完整构建日志
+- ✅ 更清晰的步骤说明和调试信息
+
+### 使用方法
+
+1. 进入 GitHub 仓库的 **Actions** 标签
+2. 选择 **Build kkFileView loong64 image**
+3. 点击 **Run workflow**
+4. 配置参数：
+   - **kkfileview_version**: 例如 `v4.4.0`
+   - **build_mode**: `source` 或 `release`
+   - **base_image**: 选择基础镜像（推荐 `cr.loongnix.cn/library/openjdk:8-buster`）
+   - **dockerfile**: 选择 Dockerfile（推荐 `Dockerfile.loong64.openjdk8`）
+   - **image_name**: 输出镜像名称
+
+### 推荐配置
+
+| 参数 | 推荐值 | 说明 |
+|------|--------|------|
+| base_image | `cr.loongnix.cn/library/openjdk:8-buster` | 已包含 Java 8，最稳定 |
+| dockerfile | `Dockerfile.loong64.openjdk8` | 最容错，成功率最高 |
+| build_mode | `source` | 从源码构建，最新代码 |
 
 ## 测试建议
 
