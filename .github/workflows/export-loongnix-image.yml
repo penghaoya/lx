@@ -11,11 +11,11 @@ on:
       images:
         description: "Comma-separated image:tag list"
         required: true
-        default: "cr.loongnix.cn/library/openjdk:8-buster,cr.loongnix.cn/portainer/portainer-ce:latest"
+        default: "lcr.loongnix.cn/kekingcn/kkfileview:4.4.0"
         type: string
 
 env:
-  DEFAULT_IMAGES: "cr.loongnix.cn/library/openjdk:8-buster,cr.loongnix.cn/portainer/portainer-ce:latest"
+  DEFAULT_IMAGES: "lcr.loongnix.cn/kekingcn/kkfileview:4.4.0"
   TARGET_PLATFORM: "linux/loong64"
 
 permissions:
@@ -68,9 +68,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          docker pull "${REF}"
+          docker pull --platform "${TARGET_PLATFORM}" "${REF}"
 
-          echo "Pulled: ${REF}"
+          echo "Pulled ${TARGET_PLATFORM}: ${REF}"
 
           IMAGE="${REF%%:*}"
           TAG="${REF#*:}"
