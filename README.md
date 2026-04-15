@@ -8,7 +8,8 @@
 
 - 支持 `release` 模式：直接下载官方发布的 jar，速度更快
 - 支持 `source` 模式：从源码编译 jar
-- 根据上游 `pom.xml` 自动识别构建所需 JDK 版本
+- 仅面向 `kkFileView v4.x` 构建
+- 固定使用 JDK 8 构建 `v4.x`
 - 使用 `docker buildx` + QEMU 构建 `linux/loong64` 镜像
 - 自动导出 `docker save` 生成的 tar 包并作为 Actions Artifact 上传
 
@@ -19,16 +20,12 @@
 3. 可以 push 到 `main` 自动触发，也可以手动运行 `Build kkFileView loong64 image` 工作流。
 4. 根据需要填写输入参数：
 
-- `kkfileview_version`：例如 `v5.0.0` 或 `v4.4.0`
+- `kkfileview_version`：例如 `v4.4.0`
 - `build_mode`：`release` 或 `source`，默认建议 `source`
-- `base_image`：可选的 loong64 运行时基础镜像
+- `base_image`：默认 `cr.loongnix.cn/library/openjdk:8-buster`
 - `image_name`：默认 `kkfileview`
-- `java_version`：可选，留空时会自动按上游版本检测
 
-建议：
-
-- 构建 `v4.x` 时，可以留空 `base_image`，工作流会自动使用 `cr.loongnix.cn/library/openjdk:8-buster`
-- 构建 `v5.x` 时，请手动填写一个支持 `linux/loong64` 且带 JDK 21 的基础镜像；因为不同环境可用镜像源差异较大，工作流不会替你猜一个可能不存在的镜像标签
+工作流会校验版本号，只有 `v4.x` 会继续执行；如果误填 `v5.x` 或其他版本，会在开始阶段直接失败并提示。
 
 ## 产物说明
 
@@ -54,8 +51,8 @@ docker logs -f kkfileview
 ## 注意事项
 
 - 上游 `v4.4.0` Release 没有公开 jar 资产，`release` 模式下载失败时会自动回退到源码编译。
-- 上游最新版本 `v5.0.0` 于 `2026-04-14` 发布，README 中涉及版本的示例如果与你实际线上版本不一致，请以工作流输入为准。
-- 如果默认基础镜像不支持 `linux/loong64`，请在工作流输入中替换为支持 LoongArch64 的 JDK 镜像。
+- 本仓库当前工作流只处理 `v4.x`，不考虑 `v5.x` 及更高版本。
+- 如果默认基础镜像不支持 `linux/loong64`，请在工作流输入中替换为其他支持 LoongArch64 的 JDK 8 镜像。
 - kkFileView 常依赖宿主机字体，离线服务器建议挂载 `/usr/share/fonts`。
 - 镜像已包含 LibreOffice；如果启动日志仍提示 `找不到office组件`，通常说明镜像不是由当前仓库最新 `Dockerfile.loong64` 构建出来的。
 - 默认容器端口为 `8012`，如有冲突可改为 `-p 18012:8012`。
