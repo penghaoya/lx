@@ -12,8 +12,14 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN set -eux; \
     chmod +x /usr/local/bin/docker-entrypoint.sh; \
     if command -v apt-get >/dev/null 2>&1; then \
+      printf '%s\n' \
+        'Acquire::AllowInsecureRepositories "true";' \
+        'Acquire::AllowDowngradeToInsecureRepositories "true";' \
+        'APT::Get::AllowUnauthenticated "true";' \
+        >/etc/apt/apt.conf.d/99loongnix-insecure; \
       apt-get update; \
-      apt-get install -y --no-install-recommends libreoffice libreoffice-writer libreoffice-calc libreoffice-impress fonts-dejavu-core ca-certificates; \
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends --allow-unauthenticated libreoffice libreoffice-writer libreoffice-calc libreoffice-impress fonts-dejavu-core ca-certificates; \
+      rm -f /etc/apt/apt.conf.d/99loongnix-insecure; \
       rm -rf /var/lib/apt/lists/*; \
     elif command -v yum >/dev/null 2>&1; then \
       yum install -y libreoffice dejavu-sans-fonts ca-certificates; \
