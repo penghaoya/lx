@@ -22,7 +22,7 @@
 
 - `kkfileview_version`：例如 `v4.4.0`
 - `build_mode`：`release` 或 `source`，默认建议 `source`
-- `base_image`：默认 `cr.loongnix.cn/loongnix-server:8.3`（使用 yum，避免 Debian 系 apt 仓库包缺失问题）
+- `base_image`：默认 `cr.loongnix.cn/library/loongnix-server:8.3`（使用 yum，避免 Debian 系 apt 仓库包缺失问题）
 - `image_name`：默认 `kkfileview`
 
 工作流会校验版本号，只有 `v4.x` 会继续执行；如果误填 `v5.x` 或其他版本，会在开始阶段直接失败并提示。
