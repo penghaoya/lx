@@ -7,22 +7,17 @@ on:
     paths:
       - .github/workflows/build-kkfileview-loong64.yml
       - Dockerfile.loong64
+      - Makefile
+      - switch_office_preview_type.patch
+      - .gitignore
       - README.md
   workflow_dispatch:
     inputs:
       kkfileview_version:
         description: kkFileView release version
         required: true
-        default: v4.4.0
+        default: 4.4.0
         type: string
-      build_mode:
-        description: Use release jar or build from source
-        required: true
-        default: source
-        type: choice
-        options:
-          - release
-          - source
       base_image:
         description: Base image for the loong64 runtime image
         required: true
@@ -46,8 +41,7 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     env:
-      KKFILEVIEW_VERSION: ${{ inputs.kkfileview_version || 'v4.4.0' }}
-      BUILD_MODE: ${{ inputs.build_mode || 'source' }}
+      RAW_VERSION: ${{ inputs.kkfileview_version || '4.4.0' }}
       BASE_IMAGE: ${{ inputs.base_image || 'cr.loongnix.cn/library/openjdk:8-buster' }}
       OFFICE_PACKAGES: ${{ inputs.office_packages || '' }}
       IMAGE_NAME: ${{ inputs.image_name || 'kkfileview' }}
@@ -58,18 +52,15 @@ jobs:
       - name: Set artifact names
         id: meta
         run: |
-          VERSION_TAG="${KKFILEVIEW_VERSION#v}"
+          set -euo pipefail
+
+          VERSION_TAG="${RAW_VERSION#v}"
+
           echo "VERSION_TAG=${VERSION_TAG}" >> "$GITHUB_ENV"
           echo "IMAGE_TAG=${IMAGE_NAME}:loong64-${VERSION_TAG}" >> "$GITHUB_ENV"
           echo "TAR_NAME=${IMAGE_NAME}-loong64-${VERSION_TAG}.tar" >> "$GITHUB_ENV"
           echo "version_tag=${VERSION_TAG}" >> "$GITHUB_OUTPUT"
           echo "tar_name=${IMAGE_NAME}-loong64-${VERSION_TAG}.tar" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '8'
 
       - name: Enable QEMU for loong64
         uses: docker/setup-qemu-action@v3
@@ -79,53 +70,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Try downloading released jar
-        if: env.BUILD_MODE == 'release'
-        id: release_jar
+      - name: Build and export via Makefile
         run: |
-          VERSION_TAG="${KKFILEVIEW_VERSION#v}"
-          JAR_URL="https://github.com/kekingcn/kkFileView/releases/download/${KKFILEVIEW_VERSION}/kkFileView-${VERSION_TAG}.jar"
-          if curl -fL "$JAR_URL" -o kkFileView.jar; then
-            echo "source_mode=release" >> "$GITHUB_OUTPUT"
-          else
-            echo "Public release jar not found for ${KKFILEVIEW_VERSION}, fallback to source build"
-            rm -f kkFileView.jar
-            echo "source_mode=fallback" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build jar from source
-        if: env.BUILD_MODE == 'source' || steps.release_jar.outputs.source_mode == 'fallback'
-        run: |
-          git clone --depth 1 --branch "${KKFILEVIEW_VERSION}" https://github.com/kekingcn/kkFileView.git upstream-kkfileview
-          cd upstream-kkfileview
-          mvn -B -ntp -pl server -am clean package -DskipTests
-          cp server/target/kkFileView-*.jar "$GITHUB_WORKSPACE/kkFileView.jar"
-
-      - name: Verify jar exists
-        run: |
-          test -f kkFileView.jar
-          ls -lh kkFileView.jar
-
-      - name: Build loong64 image
-        run: |
-          docker buildx build \
-            --platform linux/loong64 \
-            --build-arg BASE_IMAGE="${BASE_IMAGE}" \
-            --build-arg OFFICE_PACKAGES="${OFFICE_PACKAGES}" \
-            -t "${IMAGE_TAG}" \
-            -f Dockerfile.loong64 \
-            --load .
-
-      - name: Smoke test LibreOffice runtime
-        run: |
-          docker run --rm --platform linux/loong64 --entrypoint sh "${IMAGE_TAG}" -lc '
-            test -d "${OFFICE_HOME:-/opt/libreoffice}"
-            test -x "${OFFICE_HOME:-/opt/libreoffice}/program/soffice" || test -x "${OFFICE_HOME:-/opt/libreoffice}/program/soffice.bin"
-            printf "office.home=%s\n" "${OFFICE_HOME:-/opt/libreoffice}"
-          '
-
-      - name: Export image tar
-        run: docker save -o "${TAR_NAME}" "${IMAGE_TAG}"
+          make export \
+            TAG="${VERSION_TAG}" \
+            BASE_IMAGE="${BASE_IMAGE}" \
+            OFFICE_PACKAGES="${OFFICE_PACKAGES}" \
+            REPOSITORY="${IMAGE_NAME}" \
+            LOCAL_IMAGE="${IMAGE_TAG}" \
+            TAR_NAME="${TAR_NAME}"
 
       - name: Upload offline image tar
         uses: actions/upload-artifact@v4

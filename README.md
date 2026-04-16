@@ -1,48 +1,101 @@
-# kkFileView loong64 GitHub Actions 构建
+# kkFileView loong64 构建仓库
 
-这个仓库用于在 GitHub Actions 上构建可运行于 LoongArch64 服务器的 kkFileView Docker 镜像，并导出为离线部署所需的 tar 文件。
+这个仓库现在按 `Loongson-Cloud-Community/docker-library` 里 `kekingcn/kkFileView/4.4.0` 的思路重构成了源码驱动流程：
 
-## 工作流能力
+- `Makefile` 统一负责源码拉取、补丁应用、镜像构建、冒烟测试和导出 tar
+- `Dockerfile.loong64` 改成多阶段构建，直接在 loong64 容器内完成 Maven 打包
+- GitHub Actions 只调用 `make export`，不再在工作流里手写 jar 下载和源码编译步骤
 
-- 支持 `release` 模式：直接下载官方发布的 jar，速度更快
-- 支持 `source` 模式：从源码编译 jar
-- 使用 `docker buildx` + QEMU 构建 `linux/loong64` 镜像
-- 自动导出 `docker save` 生成的 tar 包并作为 Actions Artifact 上传
+## 文件结构
 
-## 使用方法
+- `Dockerfile.loong64`：多阶段 loong64 镜像构建
+- `Makefile`：统一构建入口
+- `switch_office_preview_type.patch`：沿用参考仓库思路，将 Office 预览默认类型切到 `pdf`
+- `.github/workflows/build-kkfileview-loong64.yml`：GitHub Actions 构建并导出离线镜像
+- `.github/workflows/export-loongnix-image.yml`：额外提供现成 loong64 镜像导出 tar 的能力
 
-1. 将当前目录推送到 GitHub 仓库。
-2. 打开仓库的 Actions 页面。
-3. 可以 push 到 `main` 自动触发，也可以手动运行 `Build kkFileView loong64 image` 工作流。
-4. 根据需要填写输入参数：
+## 本地构建
 
-- `kkfileview_version`：例如 `v4.4.0`
-- `build_mode`：`release` 或 `source`，默认建议 `source`
-- `base_image`：默认 `cr.loongnix.cn/library/openjdk:8-buster`
-- `office_packages`：可选，覆盖镜像内安装的 LibreOffice apt 包；默认自动优先尝试 `libreoffice-nogui`，否则回退到 `libreoffice`
-- `image_name`：默认 `kkfileview`
+构建 loong64 镜像：
 
-## 产物说明
+```bash
+make image TAG=4.4.0
+```
 
-构建完成后，Artifact 中会生成类似下面的文件：
+构建后做基础冒烟测试：
+
+```bash
+make smoke TAG=4.4.0
+```
+
+导出离线部署 tar：
+
+```bash
+make export TAG=4.4.0
+```
+
+默认会生成类似下面的本地镜像和 tar：
 
 ```text
+kkfileview:loong64-4.4.0
 kkfileview-loong64-4.4.0.tar
 ```
 
-下载后可拷贝到离线龙芯服务器，再执行：
+如果需要覆盖运行时基础镜像或 LibreOffice 包，可以这样传参：
+
+```bash
+make export \
+  TAG=4.4.0 \
+  BASE_IMAGE=cr.loongnix.cn/library/openjdk:8-buster \
+  OFFICE_PACKAGES="libreoffice-core libreoffice-writer libreoffice-calc libreoffice-impress"
+```
+
+如果需要推送镜像到仓库：
+
+```bash
+make push \
+  TAG=4.4.0 \
+  REGISTRY=lcr.loongnix.cn \
+  ORGANIZATION=kekingcn \
+  REPOSITORY=kkfileview
+```
+
+## GitHub Actions
+
+手动运行 `Build kkFileView loong64 image` 工作流时，主要输入参数有：
+
+- `kkfileview_version`：例如 `4.4.0` 或 `v4.4.0`
+- `base_image`：运行时基础镜像
+- `office_packages`：可选，覆盖 LibreOffice 安装包
+- `image_name`：本地产出镜像名和 tar 文件名前缀
+
+工作流内部会：
+
+1. 规范化版本号
+2. 调用 `make export`
+3. 上传 `docker save` 生成的 tar 作为 Artifact
+
+## 离线部署
+
+将产物拷到龙芯服务器后执行：
 
 ```bash
 docker load -i kkfileview-loong64-4.4.0.tar
-docker run -d --name kkfileview -p 8012:8012 -v /usr/share/fonts:/usr/share/fonts kkfileview:loong64-4.4.0
+docker run -d --name kkfileview -p 8012:8012 kkfileview:loong64-4.4.0
 ```
 
-现在生成的镜像会在构建阶段安装 LibreOffice，并默认注入 `-Doffice.home=/opt/libreoffice`，避免运行时出现“找不到office组件”的启动失败。
+如果宿主机字体较全，建议额外挂载字体目录：
 
-## 注意事项
+```bash
+docker run -d \
+  --name kkfileview \
+  -p 8012:8012 \
+  -v /usr/share/fonts:/usr/share/fonts \
+  kkfileview:loong64-4.4.0
+```
 
-- 上游 `v4.4.0` Release 没有公开 jar 资产，`release` 模式下载失败时会自动回退到源码编译。
-- 如果默认基础镜像不支持 `linux/loong64`，请在工作流输入中替换为支持 LoongArch64 的 JDK 镜像。
-- 如果所选基础镜像的软件源没有 `libreoffice-nogui`/`libreoffice` 默认包名，可以通过 `office_packages` 输入手动指定，例如 `libreoffice-core libreoffice-writer libreoffice-calc libreoffice-impress`。
-- kkFileView 常依赖宿主机字体，离线服务器建议挂载 `/usr/share/fonts`。
-- 默认容器端口为 `8012`，如有冲突可改为 `-p 18012:8012`。
+## 说明
+
+- 参考仓库是源码构建模式，所以这里移除了原来 workflow 中 `release/source` 双分支逻辑
+- 版本升级时通常只需要改 `TAG`，或者在 Actions 输入新版本
+- 构建过程中会自动拉取上游 `https://github.com/kekingcn/kkFileView.git` 对应 tag 源码并应用本地 patch

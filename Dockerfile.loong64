@@ -1,14 +1,42 @@
+ARG BUILDER_IMAGE=lcr.loongnix.cn/openanolis/anolisos:23.3
 ARG BASE_IMAGE=cr.loongnix.cn/library/openjdk:8-buster
+
+FROM ${BUILDER_IMAGE} AS builder
+
+ENV LANG=C.UTF-8 \
+    MAVEN_HOME=/opt/maven \
+    PATH=/opt/maven/bin:$PATH
+
+WORKDIR /src
+
+RUN set -eux; \
+    sed -i 's/\$releasever/23.3/g' /etc/yum.repos.d/AnolisOS.repo; \
+    dnf install -y wget tar gzip git java-1.8.0-openjdk-devel; \
+    dnf clean all; \
+    wget -q https://dlcdn.apache.org/maven/maven-3/3.9.12/binaries/apache-maven-3.9.12-bin.tar.gz; \
+    mkdir -p "${MAVEN_HOME}"; \
+    tar -xzf apache-maven-3.9.12-bin.tar.gz -C "${MAVEN_HOME}" --strip-components=1; \
+    rm -f apache-maven-3.9.12-bin.tar.gz
+
+COPY . .
+
+RUN mvn -B -ntp clean package -DskipTests -f server/pom.xml && \
+    mkdir -p /opt/kkfileview && \
+    tar -xzf server/target/kkFileView-*.tar.gz -C /opt/kkfileview --strip-components=1
+
 FROM ${BASE_IMAGE}
 
 ARG OFFICE_PACKAGES=
+ARG KKFILEVIEW_VERSION=4.4.0
 
-ENV LANG=C.UTF-8 \
+ENV LANG=zh_CN.UTF-8 \
+    LC_ALL=zh_CN.UTF-8 \
     DEBIAN_FRONTEND=noninteractive \
     OFFICE_HOME=/opt/libreoffice \
-    JAVA_OPTS="-Dfile.encoding=UTF-8 -Doffice.home=/opt/libreoffice"
+    KKFILEVIEW_HOME=/opt/kkFileView-${KKFILEVIEW_VERSION} \
+    JAVA_OPTS="-Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8"
 
-WORKDIR /app
+WORKDIR /opt
 
 RUN set -eux; \
     apt-get update; \
@@ -21,11 +49,19 @@ RUN set -eux; \
       fi; \
     fi; \
     apt-get install -y --no-install-recommends \
-      ${office_packages} \
-      libreoffice-java-common \
+      locales \
+      tzdata \
+      xfonts-utils \
       fontconfig \
       fonts-dejavu \
-      fonts-liberation; \
+      fonts-liberation \
+      libreoffice-java-common \
+      ${office_packages}; \
+    echo "zh_CN.UTF-8 UTF-8" > /etc/locale.gen; \
+    locale-gen; \
+    localedef -i zh_CN -c -f UTF-8 -A /usr/share/locale/locale.alias zh_CN.UTF-8; \
+    ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime; \
+    echo "Asia/Shanghai" > /etc/timezone; \
     office_bin="$(command -v soffice || true)"; \
     if [ -z "${office_bin}" ]; then \
       office_bin="$(command -v libreoffice)"; \
@@ -35,8 +71,8 @@ RUN set -eux; \
     test -d /opt/libreoffice/program; \
     rm -rf /var/lib/apt/lists/*
 
-COPY kkFileView.jar ./kkFileView.jar
+COPY --from=builder /opt/kkfileview ${KKFILEVIEW_HOME}
 
 EXPOSE 8012
 
-ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/kkFileView.jar"]
+ENTRYPOINT ["sh", "-c", "set -- \"$KKFILEVIEW_HOME\"/bin/kkFileView-*.jar; exec java $JAVA_OPTS -Doffice.home=$OFFICE_HOME -Dspring.config.location=$KKFILEVIEW_HOME/config/application.properties -jar \"$1\""]
