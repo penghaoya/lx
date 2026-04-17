@@ -18,6 +18,19 @@ on:
         required: true
         default: 4.4.0
         type: string
+      build_mode:
+        description: Build from source or download a published release jar
+        required: true
+        default: source
+        type: choice
+        options:
+          - source
+          - release
+      release_jar_url:
+        description: Optional custom release jar URL, only used when build_mode=release
+        required: false
+        default: ""
+        type: string
       base_image:
         description: Base image for the loong64 runtime image
         required: true
@@ -42,6 +55,8 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       RAW_VERSION: ${{ inputs.kkfileview_version || '4.4.0' }}
+      BUILD_MODE: ${{ inputs.build_mode || 'source' }}
+      RELEASE_JAR_URL: ${{ inputs.release_jar_url || '' }}
       BASE_IMAGE: ${{ inputs.base_image || 'cr.loongnix.cn/library/openjdk:8-buster' }}
       OFFICE_PACKAGES: ${{ inputs.office_packages || '' }}
       IMAGE_NAME: ${{ inputs.image_name || 'kkfileview' }}
@@ -72,8 +87,16 @@ jobs:
 
       - name: Build and export via Makefile
         run: |
+          VERSION_TAG="${VERSION_TAG}"
+          RELEASE_URL="${RELEASE_JAR_URL}"
+          if [ -z "${RELEASE_URL}" ]; then
+            RELEASE_URL="https://github.com/kekingcn/kkFileView/releases/download/v${VERSION_TAG}/kkFileView-${VERSION_TAG}.jar"
+          fi
+
           make export \
             TAG="${VERSION_TAG}" \
+            BUILD_MODE="${BUILD_MODE}" \
+            RELEASE_JAR_URL="${RELEASE_URL}" \
             BASE_IMAGE="${BASE_IMAGE}" \
             OFFICE_PACKAGES="${OFFICE_PACKAGES}" \
             REPOSITORY="${IMAGE_NAME}" \
