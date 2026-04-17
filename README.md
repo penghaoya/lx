@@ -3,8 +3,8 @@
 这个仓库现在按 `Loongson-Cloud-Community/docker-library` 里 `kekingcn/kkFileView/4.4.0` 的思路重构成了源码驱动流程：
 
 - `Makefile` 统一负责源码拉取、补丁应用、镜像构建、冒烟测试和导出 tar
-- `Dockerfile.loong64` 改成多阶段构建，默认在 loong64 容器内完成 Maven 打包，也支持直接下载 release jar
-- GitHub Actions 统一调用 `make export`，用参数切换源码构建或 jar 下载模式
+- `Dockerfile.loong64` 改成多阶段构建，直接在 loong64 容器内完成 Maven 打包
+- GitHub Actions 只调用 `make export`，不再在工作流里手写 jar 下载和源码编译步骤
 
 ## 文件结构
 
@@ -51,29 +51,6 @@ make export \
   OFFICE_PACKAGES="libreoffice-core libreoffice-writer libreoffice-calc libreoffice-impress"
 ```
 
-如果想跳过源码编译，直接下载发布好的 jar 来构建镜像：
-
-```bash
-make export \
-  TAG=4.4.0 \
-  BUILD_MODE=release
-```
-
-默认会尝试下载：
-
-```text
-https://github.com/kekingcn/kkFileView/releases/download/v4.4.0/kkFileView-4.4.0.jar
-```
-
-如果你需要改成私有制品库或自定义下载地址，可以覆盖：
-
-```bash
-make export \
-  TAG=4.4.0 \
-  BUILD_MODE=release \
-  RELEASE_JAR_URL="https://your-mirror.example.com/kkFileView-4.4.0.jar"
-```
-
 如果需要推送镜像到仓库：
 
 ```bash
@@ -89,8 +66,6 @@ make push \
 手动运行 `Build kkFileView loong64 image` 工作流时，主要输入参数有：
 
 - `kkfileview_version`：例如 `4.4.0` 或 `v4.4.0`
-- `build_mode`：`source` 表示源码构建，`release` 表示直接下载 jar
-- `release_jar_url`：可选，自定义 jar 下载地址；为空时按默认 GitHub release 地址拼接
 - `base_image`：运行时基础镜像
 - `office_packages`：可选，覆盖 LibreOffice 安装包
 - `image_name`：本地产出镜像名和 tar 文件名前缀
@@ -134,7 +109,6 @@ docker run -d \
 
 ## 说明
 
-- 默认仍然是源码构建模式，只有显式传 `BUILD_MODE=release` 时才会走 jar 下载
-- 如果上游 tag 没有公开 jar 资产，`BUILD_MODE=release` 会失败，此时请改回源码构建或传入可访问的 `RELEASE_JAR_URL`
+- 参考仓库是源码构建模式，所以这里移除了原来 workflow 中 `release/source` 双分支逻辑
 - 版本升级时通常只需要改 `TAG`，或者在 Actions 输入新版本
 - 构建过程中会自动拉取上游 `https://github.com/kekingcn/kkFileView.git` 对应 tag 源码并应用本地 patch
